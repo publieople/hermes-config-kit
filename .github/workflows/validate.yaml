@@ -1,0 +1,46 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for leaked secrets
+        run: |
+          echo "=== Checking for API keys in config.yaml ==="
+          if grep -n "sk-[a-zA-Z0-9]\{20,\}" config.yaml; then
+            echo "ERROR: Possible API key found in config.yaml"
+            exit 1
+          fi
+          echo "=== Checking for IP addresses ==="
+          if grep -nE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' config.yaml | grep -v "127.0.0.1" | grep -v "YOUR_WINDOWS_IP" | grep -v "0.0.0.0"; then
+            echo "ERROR: Real IP address found in config.yaml"
+            exit 1
+          fi
+          echo "=== Checking for emails ==="
+          if grep -rE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' config.yaml SOUL.md | grep -v "YOUR_EMAIL"; then
+            echo "ERROR: Real email found"
+            exit 1
+          fi
+          echo "All checks passed."
+
+      - name: Validate YAML syntax
+        run: |
+          python3 -c "import yaml; yaml.safe_load(open('config.yaml'))" && echo "config.yaml: OK"
+          python3 -c "import yaml; yaml.safe_load(open('cron/jobs.yaml'))" && echo "cron/jobs.yaml: OK"
+          python3 -c "import yaml; yaml.safe_load(open('mcp/servers.yaml'))" && echo "mcp/servers.yaml: OK"
+
+      - name: Count skills
+        run: |
+          COUNT=$(find skills/ -name "SKILL.md" | wc -l)
+          echo "Skills: $COUNT SKILL.md files"
+          if [ "$COUNT" -lt 100 ]; then
+            echo "WARNING: Fewer than 100 skills — is this a partial export?"
+          fi

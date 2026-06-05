@@ -1,0 +1,28 @@
+{
+  "name": "publieople",
+  "display_name": "人民公仆 (Publieople)",
+  "character": "celebrity",
+  "research_profile": "budget-friendly",
+  "classification": {
+    "language": "zh-CN",
+    "type": "perspective-skill"
+  },
+  "profile": {
+    "alias": "Publieople",
+    "role": "大学生 / 知识分享者",
+    "summary": "通识分享企划创始人，电脑高手速成班作者，NotionNext博客运营者",
+    "tags": ["效率", "知识分享", "工具策展", "AI", "VibeCoding", "Windows", "教程写作"]
+  },
+  "knowledge_sources": {
+    "total_pages": 49,
+    "original_articles": 13,
+    "pure_user_articles": 19,
+    "databases": 8,
+    "total_chinese_chars": 11747,
+    "research_date": "2026-05-04",
+    "source": "Notion workspace (通识分享企划 + 电脑高手速成班 + Publieople's Blog)",
+    "coauthor_note": "学生高考之后与朋友合著，朋友部分已排除"
+  },
+  "mental_models": 5,
+  "decision_heuristics": 10
+}

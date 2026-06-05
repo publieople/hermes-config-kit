@@ -1,0 +1,19 @@
+# npm global packages for Hermes Config Kit
+# Install with: while read pkg; do npm install -g "$pkg"; done < global-packages.txt
+
+# ── Core CLI Tools ────────────────────────────────────────
+mmx-cli                       # MiniMax CLI (vision, TTS, image, video, music)
+openclaw                      # OpenClaw web CLI
+@fission-ai/openspec          # OpenSpec spec-driven development
+@rpamis/comet                 # Comet development workflow
+@jackwener/opencli            # OpenCLI browser automation
+@larksuite/cli                # Feishu/Lark CLI
+
+# ── Agent Platforms ───────────────────────────────────────
+vercel                        # Vercel deployment
+hyperframes                   # HTML-to-video rendering
+
+# ── Memory & Skills ───────────────────────────────────────
+@mem0/cli                     # Mem0 external memory
+clawhub                       # ClawHub skill registry
+mcp-jobs                      # MCP jobs server

@@ -1,0 +1,25 @@
+# Hermes runtime files (not part of config)
+.hub/
+.bundled_manifest
+.usage.json
+.curator_state
+
+# API keys & secrets
+.env
+auth.json
+*.key
+*.pem
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Git
+*.orig

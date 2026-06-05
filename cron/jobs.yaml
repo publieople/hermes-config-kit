@@ -1,0 +1,44 @@
+# Cron Job Definitions for Hermes Config Kit
+# These are the cron jobs running on Publieople's Hermes.
+# After setup, create them with the cronjob tool or manually.
+
+jobs:
+  - name: daily-self-check
+    schedule: "0 8 * * *"
+    deliver: local
+    enabled: true
+    enabled_toolsets:
+      - terminal
+      - file
+      - search
+      - session_search
+    description: |
+      每日自检：检查记忆体状态、skills 健康度、系统状态。
+      输出结构化摘要报告，不推送到用户。
+
+  - name: skills-memory-maintenance
+    schedule: "30 7 * * *"
+    deliver: local
+    enabled: true
+    script: skills-memory-maintenance.py
+    enabled_toolsets:
+      - terminal
+      - file
+      - search
+      - session_search
+    description: |
+      Skills + Memory 日常维护。运行 maintenance 脚本，
+      解析输出报告，执行清理/合并/更新操作。
+
+  - name: hermes-config-sync
+    schedule: "0 6 * * 0"
+    deliver: origin
+    enabled: true
+    no_agent: true
+    script: sync-back.sh
+    enabled_toolsets:
+      - terminal
+      - file
+    description: |
+      自同步：每周日早 6 点检测 ~/.hermes/ 变更，
+      自动 redact 敏感信息后 commit + push 到 hermes-config-kit 仓库。

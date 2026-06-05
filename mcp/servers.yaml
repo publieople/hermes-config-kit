@@ -1,0 +1,25 @@
+# MCP Server Configuration
+# Copy relevant sections to ~/.hermes/config.yaml under mcp_servers:
+
+servers:
+  context7:
+    description: "Latest library documentation via MCP"
+    command: npx
+    args:
+      - "-y"
+      - "@upstash/context7-mcp@latest"
+    enabled: true
+
+  jobs:
+    description: "Job search MCP (Chinese job boards)"
+    command: node
+    args:
+      - "~/.npm-global/lib/node_modules/mcp-jobs/dist/mcp.js"
+    enabled: true
+
+  windows-mcp:
+    description: "Windows host integration (remote)"
+    url: "http://YOUR_WINDOWS_IP:8000/mcp"
+    timeout: 120
+    connect_timeout: 30
+    enabled: false  # Requires Windows host on same network

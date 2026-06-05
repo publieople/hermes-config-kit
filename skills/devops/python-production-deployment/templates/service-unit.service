@@ -1,0 +1,23 @@
+[Unit]
+Description={{SERVICE_DESCRIPTION}}
+Documentation={{DOCUMENTATION_URL}}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+EnvironmentFile={{INSTALL_DIR}}/{{APP_NAME}}.env
+ExecStart={{PYTHON_PATH}} {{INSTALL_DIR}}/{{MAIN_SCRIPT}} \
+    --server ${SERVER_IP} \
+    --port ${SERVER_PORT}
+WorkingDirectory={{INSTALL_DIR}}
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=5
+StartLimitIntervalSec=120
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

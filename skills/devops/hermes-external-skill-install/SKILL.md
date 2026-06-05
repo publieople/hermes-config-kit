@@ -1,0 +1,393 @@
+---
+name: hermes-external-skill-install
+description: |-
+  Install pre-built external AI agent skills from GitHub (agentskills.io / Claude Code / OpenClaw ecosystem) directly into Hermes Agent's skills directory.
+  Two methods: (1) `npx skills add` (agentskills.io CLI) — fast but may fail on format, (2) `git clone` fallback — always works, preserves subdirectory skills and assets.
+  Use when the user says "装一下这个skill", "安装这个技能", "装个XX", "install this skill", or points to a GitHub repo that contains a SKILL.md.
+---
+
+# Hermes 外部 Tool/Skill 安装工作流
+
+Install external tools or skills from GitHub repos into Hermes. Covers two distinct cases:
+
+- **Case A (pure skill):** Repos that are just SKILL.md + references — install directly into Hermes skills directory
+- **Case B (tool-with-skill):** Full AI application repos that happen to have a SKILL.md — they need their own dev directory, dependency installation, system requirement verification, API key setup, and THEN symlink into Hermes as a skill
+
+## 触发条件
+
+- 用户指向一个 GitHub 仓库并要求安装（"装一下这个skill"、"安装xx"、"装一下祂"、"install the skill from github.com/...", "看看这个" → "你先安装一下祂"）
+- 仓库包含 `SKILL.md`
+- 用户提到 `npx skills add` 或 `skills add` 但命令失败
+
+## 决策分支: Pure Skill vs Tool-with-Skill vs npm-Package Skill Generator
+
+Before proceeding, classify the source:
+
+| Signal | Pure Skill (Case A) | Tool-with-Skill (Case B) | npm-Package Generator (Case C) |
+|--------|-------------------|-------------------------|-------------------------------|
+| Source format | GitHub repo URL | GitHub repo URL | `npm install -g @scope/package` |
+| Has `SKILL.md` directly | ✅ Yes | ✅ Yes (within repo) | ❌ No — CLI **generates** SKILL.md files |
+| Has `pyproject.toml` / `package.json` | ❌ No | ✅ Yes | ✅ Yes (the npm package itself) |
+| Has system deps | ❌ Minimal | ✅ Yes (ffmpeg, brew, etc.) | ⚠️ May need companion tools (e.g., openspec CLI) |
+| Workflow | Clone SKILL.md | Clone app + install deps + symlink | `npm install -g` → `tool init` → copy generated skills |
+| Example | `alchaincyf/nuwa-skill` | `browser-use/video-use` | `@rpamis/comet` (generates 28 platform skill sets) |
+
+**Decision rule:** If the user points to an npm package name (or gives a GitHub repo for an npm package) that is a CLI generating SKILL.md files for multiple AI coding platforms, treat as Case C.
+
+---
+
+## Case A: Pure Skill Install (Original Workflow)
+
+### A1: 判断安装方法
+
+如果用户给的仓库名遵循 `owner/repo` 格式（如 `alchaincyf/nuwa-skill`），先尝试 agentskills.io CLI：
+
+```bash
+npx skills add owner/repo
+```
+
+如果用户直接给了完整 URL，跳过此步，直接用 A2.
+
+#### A1a: npx skills add 成功判定
+- 输出包含 `✔ Skill installed` → 成功，跳到验证
+- 输出 `No valid skills found` / `Skills require a SKILL.md with name and description` → 格式不兼容，走 A2
+- 输出其他错误 → 检查网络，重试一次，不行走 A2
+
+### A2: git clone 回退方案（通用）
+
+```bash
+git clone --depth 1 https://github.com/<owner>/<repo> ~/.hermes/skills/openclaw-imports/<skill-name>
+```
+
+#### 关键参数
+- `--depth 1` — 浅克隆
+- 目标路径: `~/.hermes/skills/openclaw-imports/<skill-name>`
+- 超时处理：设置 120s+ 超时；如果中途被超时打断，先 `rm -rf` 再重试
+- 网络限制：WSL 下若 git clone 超时，显式传递 proxy: `git -c http.proxy=http://127.0.0.1:7890 clone ...`
+
+### A2b: 大规模多技能安装（子目录批量模式）
+
+部分仓库（如 `scientific-agent-skills`）在一个 repo 内含 **数百个技能**，存放在 `scientific-skills/`、`skills/` 等子目录中。直接 clone 到 `~/.hermes/skills/` 会混入非技能文件。正确做法：
+
+1. **克隆到持久化位置**（而不是 `~/.hermes/skills/` 下）：
+
+   ```bash
+   mv /tmp/<repo> ~/.hermes/<repo>        # 如果已在 /tmp 中
+   # 或直接：
+   git clone --depth 1 https://github.com/<owner>/<repo> ~/.hermes/<repo>
+   ```
+
+2. **批量创建软链接**：遍历子目录下的每个技能目录，逐一链接到 `~/.hermes/skills/`：
+
+   ```bash
+   cd ~/.hermes/skills/
+   for dir in ~/.hermes/<repo>/<skills-subdir>/*/; do
+       name=$(basename "$dir")
+       [ ! -d "$name" ] && ln -s "$dir" "$name"
+   done
+   ```
+
+3. **验证**：
+   - 计数：`ls ~/.hermes/skills/ | wc -l` — 确认总数合理增加
+   - 抽查：`skills_list` 确认新技能出现在列表中
+   - 内容：`skill_view <任意-skill>` 确认 SKILL.md 可读
+
+4. **注意 symlink 目标路径**：使用绝对路径 `~/.hermes/...` 而非相对路径，避免因目录变更导致断链。
+
+#### 技能名推断
+优先使用 SKILL.md 中的 `name:` frontmatter，否则从 repo slug 推断。
+
+### A3: 验证注册状态
+
+```bash
+skills_list
+skill_view <skill-name>
+```
+
+### A4: 处理子目录技能
+
+外部仓库可能将多个技能放在 `examples/` 子目录中。Hermes 会自动发现这些子目录中的 SKILL.md 并注册为独立 skill — 无需额外操作。
+
+---
+
+## Case B: Tool-with-Skill Install (Application Workflow)
+
+For repos that are full AI applications with a skill interface (e.g., `browser-use/video-use`).
+
+### B1: 克隆到开发目录
+
+Clone to `~/Developer/` (NOT directly into Hermes skills dir), because the tool has its own deps, venv, and scripts:
+
+```bash
+cd ~/Developer
+git clone https://github.com/<owner>/<repo>.git
+# If proxy needed: git -c http.proxy=http://127.0.0.1:7890 clone ...
+```
+
+### B2: 安装系统依赖
+
+检查 `install.md` 或 `README.md` 了解系统依赖需求。常见的有：
+
+| 依赖 | WSL Arch | macOS |
+|------|----------|-------|
+| ffmpeg/ffprobe | `pacman -S ffmpeg` | `brew install ffmpeg` |
+| yt-dlp | `pip install yt-dlp` 或 `uv pip install yt-dlp` | `brew install yt-dlp` |
+| Node.js | `pacman -S nodejs npm` | `brew install node` |
+
+⚠️ 先检查是否已安装（`command -v` 而不是 `which`，在 WSL Arch 下 `which` 可能不存在）：
+
+```bash
+command -v ffmpeg && ffprobe -version | head -1
+```
+
+### B3: 安装 Python 依赖
+
+The tool likely has its own `pyproject.toml`:
+
+```bash
+cd ~/Developer/<repo>
+uv sync   # or: pip install -e .
+```
+
+Note: If the tool's `.venv` conflicts with Hermes' active venv, that's fine — `uv sync` creates and uses its own `.venv` inside the repo.
+
+### B4: 配置 API Keys
+
+Check if the tool needs API keys. Common key locations: `.env.example` → `.env`.
+
+If a key is needed and not set, ask the user once:
+> "I need an `<provider>` API key for transcription / generation. Grab one at `<url>` and paste it here — I'll write it to `~/Developer/<repo>/.env`. Or if you already have it exported, say 'use env'."
+
+Key rules:
+- Never echo the key back in tool output
+- Never commit `.env`
+- After writing, sanity-check with a low-cost call (e.g., 200 response = key works)
+
+### B5: 注册为 Hermes Skill
+
+Symlink the whole repo into Hermes skills directory (so `helpers/`, `scripts/`, etc. resolve relative to `SKILL.md`):
+
+```bash
+mkdir -p ~/.hermes/skills/<category>
+ln -sfn ~/Developer/<repo> ~/.hermes/skills/<category>/<skill-name>
+```
+
+**Category choice rule of thumb:**
+- `productivity/` — most AI tools (video, image, editing)
+- `devops/` — deployment, monitoring tools
+- `creative/` — art, animation tools
+
+**Skill name:** Use the repo slug (e.g., `video-use`).
+
+### B6: 验证
+
+```bash
+skills_list                    # confirm it shows up
+skill_view <skill-name>        # confirm SKILL.md loads
+ls ~/.hermes/skills/<category>/<skill-name>/helpers/   # scripts accessible?
+```
+
+### B7: 告知用户
+
+告诉用户安装完成 + 下一步怎么做。格式示例：
+
+```
+video-use 已安装到 ~/Developer/video-use，已注册为 Hermes skill。
+就缺 ElevenLabs API key 了——拿到后放到 .env 里就能用。
+用法：把素材丢到文件夹，跑 Hermes 说"edit these into a launch video"即可。
+```
+
+---
+
+## Case C: npm-Package Skill Generator Install
+
+For npm packages whose CLI generates SKILL.md files for other AI coding ecosystems (Claude Code, Cursor, OpenCode, etc.) and should be ported to Hermes.
+
+### User Preference
+
+Many users prefer the **native/original** skill files over adapted versions — they want what the tool's ecosystem provides, not a reimplementation. Always install the original CLI and generate its skill files first, then copy/adapt for Hermes.
+
+### C1: Install the npm CLI
+
+```bash
+npm install -g @scope/package
+```
+
+Verify: `package --version`
+
+### C2: Generate Skill Files for Any Platform
+
+Run the tool's `init` command in a temp directory to generate its skill files:
+
+```bash
+mkdir -p /tmp/<tool>-test && cd /tmp/<tool>-test
+<tool> init --yes   # or --tools all, etc.
+```
+
+Key things to verify:
+- The tool supports many platforms (28+ in Comet's case). Pick one platform's output (e.g., `.claude/skills/`) as the source.
+- Check what it generated: `find /tmp/<tool>-test -name 'SKILL.md'`
+- Check for companion scripts: `find /tmp/<tool>-test -name '*.sh'`
+
+### C3: Identify Companion CLI Dependencies
+
+Many skill generators depend on companion CLI tools that are also npm packages:
+
+| Tool | Companion CLI | Install |
+|------|--------------|---------|
+| Comet (`@rpamis/comet`) | OpenSpec (`@fission-ai/openspec`) | `npm install -g @fission-ai/openspec` |
+
+Initialize the companion tool too:
+```bash
+mkdir -p /tmp/<companion>-test && cd /tmp/<companion>-test
+<companion> init --tools all --force   # generates its own skill set
+```
+
+### C4: Copy Skills to Hermes
+
+Create a category directory under `~/.hermes/skills/` and copy all generated skills:
+
+```bash
+# Create category
+mkdir -p ~/.hermes/skills/<category>
+
+# Copy main tool's skills
+for skill in /tmp/<tool>-test/.claude/skills/<tool>-*; do
+  name=$(basename "$skill")
+  cp -r "$skill" ~/.hermes/skills/<category>/"$name"
+done
+
+# Copy companion tool's skills
+for skill in /tmp/<companion>-test/.claude/skills/<companion>-*; do
+  name=$(basename "$skill")
+  cp -r "$skill" ~/.hermes/skills/<category>/"$name"
+done
+
+# Copy any companion ecosystem skills (e.g., Superpowers from .agents/skills/)
+for skill in /tmp/<tool>-test/.agents/skills/*; do
+  name=$(basename "$skill")
+  # Skip if Hermes already has an equivalent
+  if [ ! -d ~/.hermes/skills/<target-category>/"$name" ] && [ ! -d ~/.hermes/skills/"$name" ]; then
+    cp -r "$skill" ~/.hermes/skills/<target-category>/"$name"
+  fi
+done
+```
+
+### C5: Copy Companion Scripts
+
+Tools like Comet include bash scripts for state management, guard checks, validation, and archiving:
+
+```bash
+cp /tmp/<tool>-test/.claude/skills/<tool>/scripts/*.sh ~/.hermes/skills/<category>/scripts/
+```
+
+### C6: Fix Hermes-Specific Paths (Critical)
+
+The generated SKILL.md files and scripts contain platform-specific path references (e.g., `$HOME/.claude/skills/`) that won't work in Hermes. You must patch them:
+
+**Common fixes needed:**
+- Search roots: Add `"$HOME/.hermes/skills/<category>"` to bash script search roots
+- Alternative find patterns: Add `-o -path '*/scripts/*.sh'` alongside platform-specific paths
+- Error messages: Update to reference Hermes paths
+
+Example (Comet-specific):
+```
+COMET_SEARCH_ROOTS=( "." "$HOME/.hermes/skills/comet" "$HOME/.claude/skills" "$HOME/.codex/skills" "$HOME/.cursor/skills" )
+COMET_GUARD=$(find ... -path '*/comet/scripts/comet-guard.sh' -o -path '*/scripts/comet-guard.sh')
+```
+
+### C7: Verify Registration
+
+```bash
+# Check via Hermes CLI
+hermes skills list 2>/dev/null | grep -i '<tool>'
+
+# Load and verify
+skill_view <tool-or-skill-name>
+```
+
+### C8: Clean Up Temp Files
+
+```bash
+rm -rf /tmp/<tool>-test /tmp/<companion>-test
+```
+
+### C9: Save to Memory
+
+Record the installation facts so future sessions know what's available.
+
+### Known Pitfalls
+
+- **Overlapping skills**: The companion ecosystem may include skills that Hermes already has (e.g., Superpowers' subagent-driven-development, TDD, writing-plans). Check before copying to avoid conflicts.
+- **Script path resolution**: Generated bash scripts often use hardcoded or narrow search roots. Always add Hermes' skills directory to the search paths and test with a dry run.
+- **CLI init fails**: Some tools' `init` commands are interactive-only and lack `--yes`/`--force` flags. In that case, manually create the test directory and inspect the npm package's bundled skill files directly under `node_modules/`.
+- **`which` not available**: WSL Arch may lack `which`. Use `command -v` for binary checks.
+
+---
+
+## 已知问题 (All Cases)
+
+### 1. npx skills add 格式兼容性
+
+`npx skills add` 底层使用 agentskills.io 的 SKILL.md parser，对 frontmatter 格式要求严格。即使 SKILL.md 包含 `name:` 和 `description:` 字段也可能失败。遇到此情况直接走 git clone 即可。
+
+### 2. 大仓库超时
+
+大仓库（含 PNG/JPG/PDF）在 WSL 下 git clone 可能超时：
+- 解决：`--depth 1` + 120s timeout
+- 如果仍然超时: `curl -L https://api.github.com/repos/owner/repo/tarball | tar xz -C <target> --strip-components=1`
+
+### 3. 网络限制 (WSL)
+
+WSL 下 GitHub/pypi 下载可能因代理问题不稳定：
+
+- `command -v curl` → `curl -s --connect-timeout 5 https://github.com` 检查连通性
+- 如果 curl 通但 git 不通，显式传递代理:
+  ```bash
+  git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 clone ...
+  ```
+- 如果还是超时 → 退化为 GitHub tarball 方式（见 #2）
+
+#### 代理策略区分：git config vs 环境变量
+
+| 目标 | 需要 | 示例 |
+|------|------|------|
+| `git clone` | `git config --global http.proxy` 或 `-c` 参数 | `git -c http.proxy=http://127.0.0.1:7890 clone ...` |
+| `pip install` + httpx 下载 | `HTTP_PROXY` / `HTTPS_PROXY` 环境变量 | `HTTP_PROXY=http://127.0.0.1:7890 pip install ...` |
+| Python 运行时 httpx 下载 | 同上，环境变量 | `HTTP_PROXY=... python3 -c "from cloakbrowser import launch; ..."` |
+
+🚨 **痛点案例**: `pip install cloakbrowser` 成功（pip 走代理），但首次 `launch()` 触发 ~200MB Chromium 二进制下载时失败（httpx 不读 git config，需要 `HTTP_PROXY` 环境变量）。解决方案：启动前显式设环境变量。
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890 python3 -c "..."
+```
+
+### 4. Symlinked script paths in multi-platform repos
+
+Some external skills (e.g., ui-ux-pro-max) use a multi-platform structure where the `SKILL.md` lives in `.claude/skills/<name>/` but its referenced scripts and data live in `src/<name>/scripts/`. The `.claude/` directory may contain **symlinks** to `src/`. 
+
+This means:
+- `skill_view(name)` → `linked_files` may report scripts at `.claude/skills/<name>/scripts/`
+- Trying to run from that path may fail or resolve differently
+- The actual runnable scripts are at `src/<name>/scripts/`
+
+**Fix:** Before running scripts referenced by linked_files, locate them:
+```bash
+find ~/.hermes/skills/openclaw-imports/<repo> -name "search.py" -type f
+```
+Check each result; prefer the one under `src/` (the canonical source) over `.claude/` or `cli/assets/`.
+
+### 5. WSL Arch: `which` 命令不可用
+
+WSL Arch 的最小化安装可能没有 `which` 命令。始终使用 `command -v` 来检查可执行文件是否存在。
+
+## 验证清单
+
+每次安装完成后检查：
+
+- [ ] 代码已 clone 到正确位置（~/Developer/ 或 ~/.hermes/skills/）
+- [ ] 系统依赖已安装（ffmpeg 等）
+- [ ] Python 依赖已安装
+- [ ] API keys 已配置（如需要）
+- [ ] Hermes 技能已注册（skills_list + skill_view）
+- [ ] 用户知道下一步怎么用
