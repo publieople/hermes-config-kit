@@ -1,17 +1,21 @@
 ---
 name: hermes-bootstrap
-description: Complete Hermes agent bootstrap — replicate all configs, workflows, cron jobs, skills, and environment from the Publieople setup. Run this on a fresh server to achieve feature parity.
+description: Complete Hermes agent bootstrap. Canonical source at github.com/publieople/hermes-config-kit
 ---
 
 # Hermes Bootstrap · 魔术师初始化
 
-> **📦 Canonical Source**: [publieople/hermes-config-kit](https://github.com/publieople/hermes-config-kit)
-> — 这是魔术师的数字孪生仓库。包含完整 config.yaml、SOUL.md、150+ skills、scripts、cron jobs、MCP 配置。
-> **优先使用仓库的 `setup.sh` 一键安装**，本 skill 作为详细参考和手动步骤说明。
->
-> 仓库每周日自动同步（cron job `hermes-config-sync`），确保永远是最新状态。
+> **Canonical source**: [hermes-config-kit](https://github.com/publieople/hermes-config-kit) — 本 skill 的文档内容已导出为可执行仓库。clone → setup.sh → 一键复现。
+> 
+> **同步**: 仓库每周自动同步。本 skill 为详细参考文档，仓库为可执行配置。
 
-在新服务器上初始化 Hermes 时，按此清单逐项执行，确保完整复制所有配置。
+在新服务器上初始化 Hermes 时，推荐直接使用 hermes-config-kit：
+```bash
+git clone https://github.com/publieople/hermes-config-kit.git
+cd hermes-config-kit && ./setup.sh
+```
+
+以下为手动配置的详细步骤（供参考和调试）。
 
 ## 0. 快速路径：hermes-config-kit（推荐）
 
@@ -44,6 +48,8 @@ hermes skills list | wc -l   # 应 > 150
 5. 有变化 → `git add -A && git commit && git push`
 
 **重要**: 这是你的数字孪生。任何设备上的任何修改，只要通过 sync-back 推送，就可以在其他设备上 pull 同步。
+
+> 📎 完整导出/脱敏/自同步技术细节见 `references/config-export-sync.md`
 
 ---
 

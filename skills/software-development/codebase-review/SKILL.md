@@ -6,7 +6,7 @@ author: Hermes Agent
 metadata:
   hermes:
     tags: [code-review, project-analysis, architecture-review, code-quality, student-project, oss-survey, tool-selection, integration-planning]
-    related_skills: [codebase-inspection, github-code-review, requesting-code-review, plan, writing-plans, spike]
+    related_skills: [github-code-review, requesting-code-review, plan, writing-plans, spike]
 ---
 
 # Codebase Review — Project Analysis from Scratch
@@ -21,7 +21,7 @@ Analyze an unfamiliar project holistically: extract from archive, understand arc
 - Student project evaluation / peer review
 - Any "what is this project about and is it good" question
 
-**Not for:** git diff / PR reviews (use `github-code-review`), pre-commit verification (use `requesting-code-review`), LOC counting (use `codebase-inspection`).
+**Not for:** git diff / PR reviews (use `github-code-review`), pre-commit verification (use `requesting-code-review`), LOC counting (see `references/codebase-inspection-pygount.md`).
 
 ## Workflow
 
