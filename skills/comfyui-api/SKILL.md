@@ -31,8 +31,9 @@ curl -s -o /dev/null -w '%{http_code}' http://localhost:8188/
 
 **注意：** ComfyUI 在加载大模型（Wan2.2 14B ~10GB+）时 GUI 线程可能短暂无响应，这不影响后端队列的正常运行。
 - **SSH**: `ssh -p 35043 po@3722d01e5a6f.ofalias.com` (OpenFRP 隧道, 带宽有限, 少传文件)
-- **本地 API 隧道**: 已建 `localhost:18188 → server:8188`
-- **本地 API 隧道**: 已建 `localhost:18188 → server:8188`
+- **⚠️ SSH 断连**: fish fastfetch banner 破坏非交互 SSH；需用 `bash -c` 包装或等 30s+ 后再连。详见 `lab-server-deploy` skill
+- **本地 API 隧道**: 已建 `localhost:18188 → server:8188`（SSH 转发，非持久，可能需重建）
+- **服务器管理**: 1Panel + OpenResty Docker 反向代理。公网仅开放 8080 端口。部署新服务见 `lab-server-deploy` skill
 - **文件下载（推荐，绕过 fish greeting）**:
   ```bash
   # 远端先用 base64 编码，本地解码

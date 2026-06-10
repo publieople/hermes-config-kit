@@ -2,7 +2,7 @@
 name: bilibili-video-summary
 description: Summarize Bilibili (B站) videos using opencli bilibili subtitle + summary + video commands. Extracts subtitles, official AI summary, and video metadata, then synthesizes into structured summaries, blog posts, or threads.
 trigger: B站视频|bilibili视频|b23.tv|BV[a-zA-Z0-9]+|总结.*视频|视频.*总结|这个视频.*看看|bilibili.*总结|B站.*总结
-version: 1.1.0
+version: 1.2.0
 tags: [bilibili, video, summary, opencli, subtitle, transcript]
 ---
 
@@ -77,6 +77,17 @@ For long videos (20min+ with 600+ subtitle entries), synthesize by chapter rathe
 
 ## Fallback Paths
 
+### A) All opencli commands timeout (Chrome not running / bridge not connected)
+
+This is the most common failure mode — all three parallel commands return `[Command timed out after 30s]`. Do not retry; switch immediately to the browser fallback:
+
+1. Use `browser_navigate` to the B站 video page directly: `https://www.bilibili.com/video/<bvid>`
+2. The page snapshot includes: video title, description (often contains project links and structured content), tags, UP主 name, and basic stats (plays, likes, danmaku)
+3. Supplement with `web_search` for the BV号 to find related discussions/blog posts that may contain detailed summaries
+4. For "Github一周热点" type videos, the description often lists all projects with GitHub links — extract these and use `web_extract` on each GitHub repo for details
+
+## Fallback Paths
+
 If `subtitle` returns nothing (no CC subtitles):
 
 1. Use `summary` alone — the AI summary is often sufficient for an overview
@@ -96,7 +107,7 @@ All commands require Chrome running with B站 login.
 ## Pitfalls
 
 - **No subtitles**: Many B站 videos lack CC subtitles. Fall back to `summary` + `video` metadata.
-- **Browser not running**: opencli needs Chrome with the Browser Bridge extension. Error message will indicate connection failure.
+- **Browser not running / all commands timeout**: If all three `opencli bilibili` commands return `[Command timed out]`, Chrome or the Browser Bridge extension is not running. Do not retry — immediately switch to the [browser fallback path](#a-all-opencli-commands-timeout-chrome-not-running--bridge-not-connected).
 - **Not logged in**: Some content (大会员, age-restricted) requires B站 login in Chrome.
 - **Summary unavailable**: B站 AI summary is not available for all videos — it's a relatively new feature.
 - **Rate limiting**: Avoid rapid-fire calls. Space commands a few seconds apart.

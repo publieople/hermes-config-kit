@@ -18,6 +18,7 @@ Install external tools or skills from GitHub repos into Hermes. Covers two disti
 - 用户指向一个 GitHub 仓库并要求安装（"装一下这个skill"、"安装xx"、"装一下祂"、"install the skill from github.com/...", "看看这个" → "你先安装一下祂"）
 - 仓库包含 `SKILL.md`
 - 用户提到 `npx skills add` 或 `skills add` 但命令失败
+- 用户问"这些 skill 从哪来的"、"给其他 agent 也装这些" → 先查 `references/hermes-management-skills.md` 获取已知来源
 
 ## 决策分支: Pure Skill vs Tool-with-Skill vs npm-Package Skill Generator
 
@@ -58,6 +59,34 @@ npx skills add owner/repo
 ```bash
 git clone --depth 1 https://github.com/<owner>/<repo> ~/.hermes/skills/openclaw-imports/<skill-name>
 ```
+
+#### A2c: 批量 cp 模式（适用于大型仓库，子目录含多个独立 skill）
+
+当仓库很大（数千文件）且技能散落在 `skills/` 子目录中时，clone 到 `~/projects/`（持久参考位置），用 `cp -r` 选择性安装到 Hermes skills 目录：
+
+```bash
+# 1. Clone 到持久位置（不是 ~/.hermes/skills/ 下）
+git clone --depth 1 https://github.com/<owner>/<repo> ~/projects/<repo>
+
+# 2. 创建分类目标目录
+mkdir -p ~/.hermes/skills/<category>/<skill-family>
+
+# 3. 选择性复制需要的 skill 子目录
+for skill in skill-a skill-b skill-c; do
+  src="$HOME/projects/<repo>/skills/$skill"
+  [ -d "$src" ] && cp -r "$src" ~/.hermes/skills/<category>/<skill-family>/$skill
+done
+
+# 4. 验证
+ls ~/.hermes/skills/<category>/<skill-family>/ | wc -l
+```
+
+**使用 cp 而非 ln 的场景**：
+- 仓库不仅包含 skills，还有大量非技能资产（测试、CI、源文件）
+- 只需要仓库中的一部分 skills
+- 需要修改 SKILL.md 以适应 Hermes（如调整 frontmatter）
+
+**选择性复制技巧**：先用 `find ~/projects/<repo>/skills -name 'SKILL.md' | head -20` 查看有哪些 skill，再根据用途筛选。
 
 #### 关键参数
 - `--depth 1` — 浅克隆
@@ -331,6 +360,10 @@ Record the installation facts so future sessions know what's available.
 
 `npx skills add` 底层使用 agentskills.io 的 SKILL.md parser，对 frontmatter 格式要求严格。即使 SKILL.md 包含 `name:` 和 `description:` 字段也可能失败。遇到此情况直接走 git clone 即可。
 
+### 1b. npx skills add 交互式选择卡住
+
+当仓库包含多个 skill 时，`npx skills add` 可能进入交互式选择界面（space to toggle → Enter to confirm），在非 PTY 终端下无法完成。现象：输出停在 `Select skills to install` 提示后不继续。此时直接走 A2 git clone 方案，不重试 npx。
+
 ### 2. 大仓库超时
 
 大仓库（含 PNG/JPG/PDF）在 WSL 下 git clone 可能超时：
@@ -380,6 +413,18 @@ Check each result; prefer the one under `src/` (the canonical source) over `.cla
 ### 5. WSL Arch: `which` 命令不可用
 
 WSL Arch 的最小化安装可能没有 `which` 命令。始终使用 `command -v` 来检查可执行文件是否存在。
+
+### 6. 追溯 skill 来源时，`git remote -v` 不可靠
+
+**陷阱**: 技能目录下的 `git remote -v` 显示的是本地 workspace 跟踪仓库（如 `publieople/hermes-workspace`），**不是**技能的原始安装来源。skill 安装后，其目录可能被本地 workspace 的 git 覆盖，remote 会指向本地仓库而非源头。
+
+**正确做法**: 追溯 skill 来源时，不要只看本地 git remote。优先级：
+1. 搜索 session 历史（`session_search`）找安装记录——看当时用的 `npx skills add`、`clawhub install` 还是 `git clone`
+2. 检查 `_archive/openclaw-imports/` 下的 `DESCRIPTION.md` 或安装时的会话上下文
+3. 在 ClawHub 搜索技能名（`clawhub search <name>` 或网页 clawhub.ai）
+4. 比对已知公开仓库（`yfge/skill-finder`、`K-Dense-AI/scientific-agent-skills`、`openclaw/agent-skills` 等）
+
+**常见案例**: 本地 `git remote` 显示 `publieople/hermes-workspace`，但技能实际来自 `clawhub install skill-vetter` 或 `npx skills add yfge/skill-finder`。如果不区分，会把私有 workspace 链接误发给其他 agent 导致无法访问。
 
 ## 验证清单
 

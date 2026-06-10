@@ -24,6 +24,8 @@ tags:
 
 # Agent Self-Maintenance Setup Guide
 
+> **Reference files**: `references/interactive-skill-audit.md` — manual/interactive skill audit methodology (complementary to the automated cron approach below).
+
 ## Overview
 
 Set up a cron job chain for ongoing agent health:
@@ -322,6 +324,15 @@ Note: Replace `<maintenance_job_id>` with the actual ID from `cronjob action=lis
 - Do NOT `git push` from cron jobs — local commits only, unless user explicitly requests remote backup.
 - `gh repo create --push` may time out on large repos — the repo is still created, just push separately with `git push -u origin master`.
 - First `git init` commit may include 4000+ files (migration archive, cron output history). Tune `.gitignore` first, then `git add -A && git commit`.
+
+## Interactive Skill Audit (Manual Cleanup)
+
+When the user asks to "list all skills" or "clean up unused skills", use the interactive audit methodology documented in `references/interactive-skill-audit.md`. Key steps:
+
+1. **List**: Use `find ~/.hermes/skills -name "SKILL.md"` — NOT `skills_list` which truncates output for large skill sets.
+2. **Analyze staleness**: `find ... -printf "%T+ %p\n" | sort` — modification time is the best proxy for usage when logs don't surface skill names.
+3. **Categorize**: Domain relevance trumps age. A 3-month-old devops skill is more valuable than a 1-week-old bioinformatics skill for this user.
+4. **Log search caveat**: `grep` on `agent.log` needs `-a` flag (binary detection false-positive). Even then, skill names are embedded in JSON tool-call payloads and hard to extract — file mtime is more reliable.
 
 ## Safety Rules
 

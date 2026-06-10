@@ -15,15 +15,15 @@ agent:
   api_max_retries: 3
   service_tier: ''
   tool_use_enforcement: auto
-  task_completion_guidance: true
-  environment_probe: true
-  environment_hint: ''
   gateway_timeout_warning: 900
   clarify_timeout: 600
   gateway_notify_interval: 180
   gateway_auto_continue_freshness: 3600
   image_input_mode: auto
   disabled_toolsets: []
+  task_completion_guidance: true
+  environment_probe: true
+  environment_hint: ''
   verbose: false
   reasoning_effort: medium
   personalities:
@@ -83,6 +83,7 @@ terminal:
   singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
   modal_image: nikolaik/python-nodejs:python3.11-nodejs20
   daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
+  vercel_runtime: node24
   container_cpu: 1
   container_memory: 5120
   container_disk: 51200
@@ -92,7 +93,6 @@ terminal:
   docker_extra_args: []
   docker_run_as_host_user: false
   persistent_shell: true
-  vercel_runtime: node24
   lifetime_seconds: 300
 web:
   backend: ''
@@ -263,7 +263,6 @@ display:
   resume_skip_tool_only: true
   busy_input_mode: interrupt
   tui_auto_resume_recent: false
-  tui_agents_nudge: true
   bell_on_complete: false
   show_reasoning: false
   streaming: true
@@ -273,7 +272,6 @@ display:
   persistent_output_max_lines: 200
   inline_diffs: true
   file_mutation_verifier: true
-  turn_completion_explainer: true
   show_cost: false
   skin: default
   language: en
@@ -286,7 +284,13 @@ display:
   tool_progress_overrides: {}
   tool_preview_length: 0
   ephemeral_system_ttl: 0
-  platforms: {}
+  platforms:
+    telegram:
+      streaming: true
+    discord:
+      streaming: false
+    napcat:
+      require_mention: true
   runtime_footer:
     enabled: false
     fields:
@@ -294,6 +298,9 @@ display:
     - context_pct
     - cwd
   copy_shortcut: auto
+  interface: cli
+  tui_agents_nudge: true
+  turn_completion_explainer: true
   tool_progress: all
   background_process_notifications: all
   mouse_tracking: true
@@ -303,6 +310,12 @@ dashboard:
   oauth:
     client_id: ''
     portal_url: ''
+  basic_auth:
+    username: ''
+    password_hash: ''
+    password: ''
+    secret: ''
+    session_ttl_seconds: 0
   public_url: ''
 privacy:
   redact_pii: false
@@ -395,6 +408,265 @@ skills:
   inline_shell_timeout: 10
   guard_agent_created: false
   creation_nudge_interval: 15
+  platform_disabled:
+    napcat:
+    - _archive/codex-duplicate-of-claude-code
+    - _archive/multi-search-engine
+    - _archive/openclaw-imports/code
+    - _archive/openclaw-imports/github
+    - _archive/openclaw-imports/notion
+    - _archive/openclaw-imports/openclaw-tavily-search
+    - _archive/openclaw-imports/pdf-generator
+    - _archive/openclaw-imports/remotion-video-toolkit
+    - _archive/openclaw-imports/self-improving-agent
+    - _archive/openclaw-imports/skill-vetter
+    - _archive/openclaw-imports/sql-toolkit
+    - _archive/pptx-duplicate-of-powerpoint
+    - _archive/skill-finder-cn
+    - _archive/somark-document-parser
+    - _archive/subagent-driven-development
+    - a2a-hermes-bridge-deploy
+    - api/liciyuan-api
+    - api/xingzhige-api
+    - apple/apple-notes
+    - apple/apple-reminders
+    - apple/findmy
+    - apple/imessage
+    - apple/macos-computer-use
+    - autonomous-ai-agents/claude-code
+    - autonomous-ai-agents/codex
+    - autonomous-ai-agents/hermes-external-integration
+    - autonomous-ai-agents/kanban-codex-lane
+    - autonomous-ai-agents/opencode
+    - ble-protocol-extraction
+    - career/career-job-hunting
+    - cloakbrowser-douyin-scraper
+    - comet
+    - comet/comet-archive
+    - comet/comet-build
+    - comet/comet-design
+    - comet/comet-hotfix
+    - comet/comet-open
+    - comet/comet-tweak
+    - comet/comet-verify
+    - comfyui-api
+    - comfyui-api/ai-drama-pipeline-route-planning
+    - comfyui-api/flux2-klein-character-consistency
+    - comfyui-api/wan2.2-flf2v-pipeline
+    - creative/architecture-diagram
+    - creative/ascii-art
+    - creative/ascii-video
+    - creative/baoyu-article-illustrator
+    - creative/baoyu-comic
+    - creative/baoyu-infographic
+    - creative/claude-design
+    - creative/comfyui
+    - creative/creative-ideation
+    - creative/design-md
+    - creative/excalidraw
+    - creative/humanizer
+    - creative/manim-video
+    - creative/open-design/design-review
+    - creative/open-design/pptx-generator
+    - creative/open-design/pptx-html-fidelity-audit
+    - creative/open-design/reference-design-contract
+    - creative/open-design/release-notes-one-pager
+    - creative/open-design/remotion
+    - creative/open-design/resume-modern
+    - creative/open-design/screenshots-marketing
+    - creative/open-design/shadcn-ui
+    - creative/open-design/shader-dev
+    - creative/open-design/slides
+    - creative/open-design/social-reddit-card
+    - creative/open-design/social-spotify-card
+    - creative/open-design/social-x-post-card
+    - creative/open-design/stitch-loop
+    - creative/open-design/stitch-skill
+    - creative/open-design/swiftui-design
+    - creative/open-design/theme-factory
+    - creative/open-design/threejs
+    - creative/open-design/ui-skills
+    - creative/open-design/ui-ux-pro-max
+    - creative/open-design/video-hyperframes
+    - creative/open-design/web-artifacts-builder
+    - creative/open-design/web-design-guidelines
+    - creative/p5js
+    - creative/pixel-art
+    - creative/popular-web-designs
+    - creative/pretext
+    - creative/sketch
+    - creative/songwriting-and-ai-music
+    - creative/taste-skill/brandkit
+    - creative/taste-skill/brutalist-skill
+    - creative/taste-skill/gpt-tasteskill
+    - creative/taste-skill/image-to-code-skill
+    - creative/taste-skill/imagegen-frontend-mobile
+    - creative/taste-skill/imagegen-frontend-web
+    - creative/taste-skill/minimalist-skill
+    - creative/taste-skill/output-skill
+    - creative/taste-skill/redesign-skill
+    - creative/taste-skill/soft-skill
+    - creative/taste-skill/stitch-skill
+    - creative/taste-skill/taste-skill
+    - creative/taste-skill/taste-skill-v1
+    - creative/touchdesigner-mcp
+    - data-science/jupyter-live-kernel
+    - devops/1panel-openresty-troubleshooting
+    - devops/agent-diagnostics
+    - devops/agent-self-maintenance
+    - devops/agent-skill-migration
+    - devops/cloakbrowser-web-scraping
+    - devops/cloudflare-dns
+    - devops/hermes-bootstrap
+    - devops/hermes-external-skill-install
+    - devops/kanban-orchestrator
+    - devops/kanban-worker
+    - devops/lab-server-deploy
+    - devops/mem0-memory-setup
+    - devops/playwright-browser-diagnostics
+    - devops/python-production-deployment
+    - devops/skill-publishing
+    - devops/webhook-subscriptions
+    - dogfood
+    - email/himalaya
+    - frontend/shadcn-magicui-development
+    - gaming/bci-game-development
+    - gaming/minecraft-modpack-server
+    - gaming/pokemon-player
+    - github/codebase-inspection
+    - github/github-auth
+    - github/github-code-review
+    - github/github-issues
+    - github/github-pr-workflow
+    - github/github-repo-management
+    - job-hunting-ai-agent
+    - mcp/native-mcp
+    - media/bilibili-video-summary
+    - media/gif-search
+    - media/heartmula
+    - media/html-video-rendering
+    - media/songsee
+    - media/spotify
+    - media/youtube-content
+    - messaging/hermes-napcat-qq
+    - mlops/evaluation/lm-evaluation-harness
+    - mlops/evaluation/weights-and-biases
+    - mlops/huggingface-hub
+    - mlops/inference/llama-cpp
+    - mlops/inference/obliteratus
+    - mlops/inference/outlines
+    - mlops/inference/vllm
+    - mlops/minimax-vision
+    - mlops/models/audiocraft
+    - mlops/models/segment-anything
+    - mlops/research/dspy
+    - mlops/tabular-emotion-classification-pipeline
+    - mlops/training/axolotl
+    - mlops/training/trl-fine-tuning
+    - mlops/training/unsloth
+    - napcat-hermes-setup
+    - note-taking/obsidian
+    - notionnext-blog
+    - openclaw-imports/aminer-data-search
+    - openclaw-imports/cli-anything
+    - openclaw-imports/docx
+    - openclaw-imports/dot-skill
+    - openclaw-imports/lark-approval
+    - openclaw-imports/lark-attendance
+    - openclaw-imports/lark-base
+    - openclaw-imports/lark-calendar
+    - openclaw-imports/lark-contact
+    - openclaw-imports/lark-doc
+    - openclaw-imports/lark-drive
+    - openclaw-imports/lark-event
+    - openclaw-imports/lark-im
+    - openclaw-imports/lark-mail
+    - openclaw-imports/lark-minutes
+    - openclaw-imports/lark-okr
+    - openclaw-imports/lark-openapi-explorer
+    - openclaw-imports/lark-shared
+    - openclaw-imports/lark-sheets
+    - openclaw-imports/lark-skill-maker
+    - openclaw-imports/lark-slides
+    - openclaw-imports/lark-task
+    - openclaw-imports/lark-vc
+    - openclaw-imports/lark-whiteboard
+    - openclaw-imports/lark-wiki
+    - openclaw-imports/lark-workflow-meeting-summary
+    - openclaw-imports/lark-workflow-standup-report
+    - openclaw-imports/nuwa-skill
+    - openclaw-imports/opencli-autofix
+    - openclaw-imports/opencli-browser
+    - openclaw-imports/opencli-explorer
+    - openclaw-imports/opencli-oneshot
+    - openclaw-imports/opencli-usage
+    - openclaw-imports/pdf
+    - openclaw-imports/self-distillation-pipeline
+    - openclaw-imports/smart-search
+    - openclaw-imports/xlsx
+    - openspec/openspec-apply-change
+    - openspec/openspec-archive-change
+    - openspec/openspec-explore
+    - openspec/openspec-propose
+    - priestess-a2a
+    - productivity/airtable
+    - productivity/bilibili-follow-extractor
+    - productivity/coursework-organization
+    - productivity/daily-digest-pipeline
+    - productivity/google-workspace
+    - productivity/linear
+    - productivity/maps
+    - productivity/nano-pdf
+    - productivity/notion
+    - productivity/notion-bill
+    - productivity/notion-cms-draft-evaluation
+    - productivity/notion-content-extraction
+    - productivity/notion-github-sync
+    - productivity/notionnext-content-sync-diagnostics
+    - productivity/ocr-and-documents
+    - productivity/powerpoint
+    - productivity/teams-meeting-pipeline
+    - productivity/visiky-resume-setup
+    - red-teaming/godmode
+    - reference/yubai-dramaflow
+    - research/arxiv
+    - research/blogwatcher
+    - research/llm-wiki
+    - research/polymarket
+    - research/research-paper-writing
+    - smart-home/openhue
+    - social-media/xurl
+    - software-development/alembic-async-fastapi-setup
+    - software-development/codebase-review
+    - software-development/debugging-hermes-tui-commands
+    - software-development/hermes-agent-skill-authoring
+    - software-development/hermes-dev-workflow
+    - software-development/hermes-s6-container-supervision
+    - software-development/ml-course-project-delivery-packaging
+    - software-development/ml-web-course-project-wsl
+    - software-development/node-inspect-debugger
+    - software-development/plan
+    - software-development/python-debugpy
+    - software-development/requesting-code-review
+    - software-development/simplify-code
+    - software-development/spec-kit-greenfield-init
+    - software-development/spike
+    - software-development/subagent-driven-development
+    - software-development/systematic-debugging
+    - software-development/test-driven-development
+    - software-development/vue3-feed-ui
+    - software-development/writing-plans
+    - superpowers/brainstorming
+    - superpowers/dispatching-parallel-agents
+    - superpowers/executing-plans
+    - superpowers/finishing-a-development-branch
+    - superpowers/receiving-code-review
+    - superpowers/using-git-worktrees
+    - superpowers/using-superpowers
+    - superpowers/verification-before-completion
+    - superpowers/writing-skills
+    - webdav-debugging
+    - yuanbao
 curator:
   enabled: true
   interval_hours: 168
@@ -404,6 +676,7 @@ curator:
   backup:
     enabled: true
     keep: 5
+  prune_builtins: true
 honcho: {}
 timezone: ''
 slack:
@@ -425,6 +698,20 @@ discord:
   server_actions: ''
   allow_any_attachment: false
   max_attachment_bytes: 33554432
+  voice_fx:
+    enabled: false
+    ambient_enabled: true
+    ambient_path: ''
+    ambient_gain: 0.18
+    duck_gain: 0.06
+    speech_gain: 1.0
+    ack_enabled: true
+    ack_phrases:
+    - Let me look into that.
+    - One moment.
+    - Checking on that now.
+    - Give me a sec.
+    - On it.
 whatsapp: {}
 telegram:
   reactions: false
@@ -446,14 +733,15 @@ approvals:
   mcp_reload_confirm: true
   destructive_slash_confirm: false
 command_allowlist:
-- stop/restart hermes gateway (kills running agents)
+- sudo with privilege flag (stdin/askpass/shell/list)
+- delete in root path
+- recursive delete
+- script execution via heredoc
 - script execution via -e/-c flag
 - shell command via -c/-lc flag
-- script execution via heredoc
-- delete in root path
+- stop/restart hermes gateway (kills running agents)
+- stop/restart system service
 - overwrite system file via redirection
-- sudo with privilege flag (stdin/askpass/shell/list)
-- recursive delete
 quick_commands: {}
 hooks: {}
 hooks_auto_accept: false
@@ -482,24 +770,21 @@ kanban:
   worker_log_backup_count: 1
   orchestrator_profile: ''
   default_assignee: ''
-  max_in_progress_per_profile: null
   auto_decompose: true
   auto_decompose_per_tick: 3
   dispatch_stale_timeout_seconds: 14400
+  max_in_progress_per_profile: null
 code_execution:
   mode: project
   timeout: 300
   max_tool_calls: 50
-tools:
-  tool_search:
-    enabled: auto
-    threshold_pct: 10
-    search_default_limit: 5
-    max_search_limit: 20
 logging:
   level: INFO
   max_size_mb: 5
   backup_count: 3
+  memory_monitor:
+    enabled: true
+    interval_seconds: 300
 model_catalog:
   enabled: true
   url: https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
@@ -508,10 +793,10 @@ model_catalog:
 network:
   force_ipv4: false
 gateway:
-  strict: false
   media_delivery_allow_dirs: []
   trust_recent_files: true
   trust_recent_files_seconds: 600
+  strict: false
 sessions:
   auto_prune: false
   retention_days: 90
@@ -548,14 +833,25 @@ secrets:
 paste_collapse_threshold: 5
 paste_collapse_threshold_fallback: 5
 paste_collapse_char_threshold: 2000
-_config_version: 25
+_config_version: 26
+tools:
+  tool_search:
+    enabled: auto
+    threshold_pct: 10
+    search_default_limit: 5
+    max_search_limit: 20
+streaming:
+  enabled: false
+  transport: auto
+  edit_interval: 0.8
+  buffer_threshold: 24
+  cursor: " \u2589"
+  fresh_final_after_seconds: 60.0
 session_reset:
   mode: both
   idle_minutes: 1440
   at_hour: 4
 group_sessions_per_user: true
-streaming:
-  enabled: false
 platform_toolsets:
   cli:
   - hermes-cli
@@ -573,6 +869,23 @@ platform_toolsets:
   - hermes-homeassistant
   qqbot:
   - hermes-qqbot
+  napcat:
+  - clarify
+  - computer_use
+  - cronjob
+  - delegation
+  - file
+  - kanban
+  - memory
+  - messaging
+  - napcat
+  - session_search
+  - skills
+  - terminal
+  - todo
+  - tts
+  - vision
+  - web
 custom_providers: []
 FEISHU_HOME_CHANNEL: YOUR_FEISHU_CHANNELcfb2
 mcp_servers:
@@ -591,25 +904,8 @@ mcp_servers:
     args:
     - '@upstash/context7-mcp@latest'
     enabled: true
-
-# ── Fallback Model ────────────────────────────────────────────────────
-# Automatic provider failover when primary is unavailable.
-# Uncomment and configure to enable. Triggers on rate limits (429),
-# overload (529), service errors (503), or connection failures.
-#
-# Supported providers:
-#   openrouter   (OPENROUTER_API_KEY)  — routes to any model
-#   openai-codex (OAuth — hermes auth) — OpenAI Codex
-#   nous         (OAuth — hermes auth) — Nous Portal
-#   zai          (ZAI_API_KEY)         — Z.AI / GLM
-#   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
-#   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
-#   minimax      (MINIMAX_API_KEY)     — MiniMax
-#   minimax-cn   (MINIMAX_CN_API_KEY)  — MiniMax (China)
-#   bedrock      (AWS IAM / boto3)     — AWS Bedrock (Converse API)
-#
-# For custom OpenAI-compatible endpoints, add base_url and key_env.
-#
-# fallback_model:
-#   provider: openrouter
-#   model: anthropic/claude-sonnet-4
+known_plugin_toolsets:
+  napcat:
+  - spotify
+napcat:
+  require_mention: true

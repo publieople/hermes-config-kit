@@ -87,3 +87,26 @@ $ mmx vision describe --image ~/.hermes/image_cache/img_abc123.jpg
 
 - **不要在 MiniMax 之前尝试 vision_analyze -> OCR 链** — 当前主力模型无原生视觉，`vision_analyze` 靠辅助模型（通常也失败），OCR 会产生乱码且浪费时间装 tesseract。用户发图后的正确路径只有一条：加载本 skill -> `mmx vision describe`。
 - **看了图没加载 skill** — 触发条件已在上面写明，但容易在执行中被忽略。用户发图后第一件事必须是加载本 skill，没有例外。
+
+### QQ/NapCat 图片处理
+
+当用户通过 NapCat QQ 发送图片时，图片以 `[图片:文件ID.png]` 形式出现，**不会**自动出现在 `image_cache/` 目录下。需要以下步骤定位图片：
+
+1. 用 `napcat_call` 获取图片信息：
+   ```
+   napcat_call(action='get_image', params={'file_id': '文件ID.png'})
+   ```
+   返回值中 `data.file` 给出 Windows 文件路径（如 `E:\Documents\Tencent Files\...\Ori\xxx.png`）
+
+2. 将 Windows 路径转为 WSL 路径并复制：
+   ```
+   cp "/mnt/e/Documents/Tencent Files/.../Ori/xxx.png" /tmp/qq_image.png
+   ```
+
+3. 用 mmx 分析：
+   ```
+   export PATH="$HOME/.npm-global/bin:$PATH"
+   mmx vision describe --image /tmp/qq_image.png
+   ```
+
+**注意：** QQ 多媒体链接（`data.url`）有时效性 token（rkey），直接访问可能返回 400，优先走 WSL 文件路径。

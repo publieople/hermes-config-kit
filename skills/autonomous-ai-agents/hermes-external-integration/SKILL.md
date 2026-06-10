@@ -49,6 +49,11 @@ Hermes offers these integration mechanisms:
 **Key Decision Tree:**
 
 ```
+Target app is a messaging platform (QQ, etc.)?
+  → Check if Hermes has a native platform adapter first (hermes gateway setup)
+  → For QQ without official Bot API approval: use NapCat/OneBot bridge
+    See references/napcat-qq-setup.md for the full workflow.
+
 Target app supports Custom API Endpoint (OpenAI-compatible)?
   YES → Use API Server (most powerful, full Hermes toolset)
   
@@ -122,8 +127,41 @@ hermes chat -q "{{USER_QUERY}}" --quiet
 echo "{{CONTEXT}}" | hermes chat -q "Process this: {{CONTEXT}}" --quiet
 ```
 
+## Installing Platform Adapters from Unmerged PRs
+
+Some platform adapters exist in open PRs but haven't been merged to main. To use them, switch your Hermes git checkout to the PR branch:
+
+```bash
+cd ~/.hermes/hermes-agent
+
+# Add the PR author's fork
+git remote add <author> https://github.com/<author>/hermes-agent.git
+git fetch <author> <branch>
+
+# Stop gateway, switch branch, restart
+hermes gateway stop
+git checkout -b <local-name> <author>/<branch>
+hermes gateway start
+
+# Verify the platform code exists
+ls gateway/platforms/<platform>.py
+```
+
+> ⚠️ `hermes update` will return to upstream main — you'll need to `git checkout <local-name>` again after updates.
+> The branch switch is safe: gateway service restarts cleanly with the new code.
+
+**Current known PR adapters:**
+| Platform | PR | Author | Branch | Files |
+|----------|-----|--------|--------|-------|
+| NapCat (QQ/OneBot) | [#17917](https://github.com/NousResearch/hermes-agent/pull/17917) | MoeOver | `moeover/main` | `gateway/platforms/napcat.py`, `tools/napcat_tool.py`, `skills/messaging/napcat/SKILL.md` |
+
 ## Pitfalls
 
+- **Gateway connects platforms sequentially — slow platforms block faster ones** — The gateway iterates through enabled platforms and connects them one at a time. A slow/stuck platform (e.g. Telegram timing out for 30+ seconds) delays all subsequent platforms. If a newly-added platform's port isn't listening immediately after `hermes gateway start`, check the logs with `tail -f ~/.hermes/logs/gateway.log | grep -E 'platform|connected'` and wait for the line `Gateway running with N platform(s)` to confirm all platforms are up. **Workaround:** if `hermes gateway restart` hangs, use `kill -9 $(pgrep -f 'hermes_cli.main gateway run')` then `hermes gateway start` instead.
+- **Platform adapters with allowlists silently reject unauthorized users** — Many platform adapters default to allowlist mode. For group chat platforms, messages from unauthorized users generate a `WARNING` log (`Unauthorized user`) but are silently dropped — the sender gets no feedback. Check each platform's authorization env vars:
+  - Per-platform allow-all: `<PLATFORM>_ALLOW_ALL_USERS=true` (e.g. `NAPCAT_ALLOW_ALL_USERS=true`)
+  - Per-platform user allowlist: `<PLATFORM>_ALLOWED_USERS=id1,id2`
+  - Group/chat-level allowlist: `<PLATFORM>_ALLOWED_GROUPS=id1,id2`
 - **Proxy interferes with localhost health checks** — If Hermes is behind an HTTP proxy (Clash, etc.), `curl http://127.0.0.1:8642/health` goes through the proxy and returns 502/timeout instead of reaching the API server. Always use `curl --noproxy '*'` for localhost checks.
 - **Gateway process may not have API_SERVER_ENABLED in /proc/PID/environ** — The env var is loaded by Python's `load_dotenv()` at runtime, not inherited from systemd. It won't appear in `/proc/PID/environ` even though `os.getenv()` sees it correctly. Check with `ss -tlnp | grep 8642` instead of relying on /proc/PID/environ.
 - **Systemd restart with API_SERVER_ENABLED** — After adding `API_SERVER_ENABLED=true` to `.env` and running `hermes gateway restart`, the process exits with code 75 (TEMPFAIL) by design. Systemd auto-restarts it with the new config. Wait a few seconds, then verify with `ss -tlnp | grep 8642`.
@@ -202,3 +240,9 @@ After optimization:
 ## Verification
 
 After setup, verify the integration works:
+
+## Platform-Specific Guides
+
+| Platform | Reference |
+|----------|-----------|
+| NapCat / QQ (OneBot v11) | `references/napcat-onebot.md` — Reverse WebSocket adapter, Windows NapCat → WSL Hermes |
