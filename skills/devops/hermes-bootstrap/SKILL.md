@@ -51,6 +51,32 @@ hermes skills list | wc -l   # 应 > 150
 
 > 📎 完整导出/脱敏/自同步技术细节见 `references/config-export-sync.md`
 
+### ⚠️ 常见陷阱
+
+**1. 不要把 `~/.hermes/` 当 git 仓库**
+
+`~/.hermes/` 是 Hermes 的**运行时工作目录**，包含 sessions（会话记录）、logs（日志）、state-snapshots（状态快照）、cache 等大量运行时产物。它不应该被 `git init`。
+
+正确的架构：
+```
+~/.hermes/                   ← 运行时目录（不是 git repo）
+├── config.yaml / SOUL.md
+├── skills/ / scripts/ / cron/
+├── sessions/ / logs/ / ...  ← 运行时数据，体积大
+
+~/projects/hermes-config-kit/  ← 唯一备份仓库（git repo）
+├── sync-back.sh             ← 选择性同步：脱敏 → commit → push
+└── setup.sh                 ← 一键复现
+```
+
+`sync-back.sh` 只复制 config、skills、scripts、cron 等**配置资产**，不复制 sessions/logs/cache 等运行时数据。每周日 cron 自动运行。
+
+教训：之前错误地把 `~/.hermes/` 初始化为 git 仓库（指向已废弃的 `hermes-workspace`），导致 443M 的 `.git` 目录嵌在运行时目录中，外加一个独立的 `~/hermes-workspace/` clone 造成双重冗余。已清理。
+
+**2. 只有 hermes-config-kit 一个备份仓库**
+
+`hermes-workspace`（旧方案，5月已停）已被 `hermes-config-kit` 取代。不要创建第二个备份仓库。如果发现多个 hermes 备份 repo，保留 `hermes-config-kit`，删除其他。
+
 ---
 
 ## 1. 系统环境准备
