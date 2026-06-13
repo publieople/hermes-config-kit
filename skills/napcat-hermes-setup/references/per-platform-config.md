@@ -17,25 +17,29 @@ if agent is None:
     )
 ```
 
-## 2. 按渠道切换模型
+## 2. 按渠道切换模型（通用 `{PLATFORM}_MODEL` 机制）
 
-模型通过 `model.default` 全局设置。按渠道切换需要：
+**已完成**：已升级为通用 feature，不再是 NapCat 专属补丁。
 
-**代码补丁**（`gateway/run.py` ~line 16773）：
+**代码补丁**（`gateway/run.py` 约 2712 行，`_resolve_session_agent_runtime()` 中）：
 ```python
-turn_route = self._resolve_turn_agent_config(message, model, runtime_kwargs)
-
-# NapCat: use NAPCAT_MODEL if set
-if source.platform == Platform.NAPCAT:
-    _nc_model = os.getenv("NAPCAT_MODEL", "").strip()
-    if _nc_model:
-        turn_route["model"] = _nc_model
+model = _resolve_gateway_model(user_config)
+# ── Per-platform model override via {PLATFORM}_MODEL env var ──
+if source and source.platform:
+    _plat_model_env = f"{source.platform.value.upper()}_MODEL"
+    _plat_model = os.getenv(_plat_model_env, "").strip()
+    if _plat_model:
+        model = _plat_model
 ```
 
 **环境变量**（`~/.hermes/.env`）：
 ```bash
-NAPCAT_MODEL=deepseek-v4-flash  # QQ 用 flash，CLI 用 pro
+NAPCAT_MODEL=deepseek-v4-flash    # QQ 用 flash
+TELEGRAM_MODEL=claude-sonnet-4    # Telegram 用 Claude
+# 不设的平台走 config.yaml model.default
 ```
+
+**优先级**：`/model` slash command > `{PLATFORM}_MODEL` env var > `model.default`
 
 ## 3. 按渠道扫描用户消息（反越狱）
 

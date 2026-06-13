@@ -104,6 +104,53 @@ If `subtitle` returns nothing (no CC subtitles):
 
 All commands require Chrome running with B站 login.
 
+## Whisper 语音转文字（无字幕降级）
+
+当视频无任何字幕时，用 Whisper 本地语音转文字。适用于少数无字幕视频的兜底方案。
+
+### GPU 加速（WSL）
+
+WSL 2 的 GPU 通过 `/usr/lib/wsl/lib/` 访问：
+
+```bash
+uv venv --python 3.12 .venv-cuda
+uv pip install --python .venv-cuda/bin/python \
+  --index-url https://download.pytorch.org/whl/cu128 torch \
+  -i https://pypi.tuna.tsinghua.edu.cn/simple openai-whisper
+```
+
+| GPU 显存 | 模型 | 速度 |
+|----------|------|------|
+| ≥12GB | medium | ~0.45x 实时 |
+| 6-12GB | **small** | ~0.21x 实时（推荐） |
+| <6GB | base | — |
+
+⚠️ **WSL CUDA 下 medium 比 small 慢**（4070 实测: 95s vs 45s），选 small。
+⚠️ **不要强设 `--language zh`**：让 Whisper 自动检测语言。
+
+### B站 412 反爬
+
+yt-dlp 访问 B站返回 HTTP 412 时加：
+```bash
+--add-header "Origin:https://www.bilibili.com" --add-header "Referer:https://www.bilibili.com/"
+```
+
+### 依赖
+
+⚠️ **Python 3.14 不兼容 openai-whisper**（缺少 `pkg_resources`）。必须用 Python 3.12 venv。
+
+| 工具 | 用途 |
+|------|------|
+| yt-dlp | 下载视频/字幕 |
+| ffmpeg | 音频处理 |
+| torch + openai-whisper | 语音转文字 |
+| opencc | 繁转简 |
+
+详见：
+- `references/whisper-wsl-cuda-setup.md` — WSL CUDA 完整配置
+- `references/python314-whisper-compat.md` — Python 3.14 兼容问题
+- `references/bilibili-412-fix.md` — B站 412 反爬修复
+
 ## Pitfalls
 
 - **No subtitles**: Many B站 videos lack CC subtitles. Fall back to `summary` + `video` metadata.

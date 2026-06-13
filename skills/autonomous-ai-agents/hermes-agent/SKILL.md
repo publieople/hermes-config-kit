@@ -589,6 +589,50 @@ terminal(command="tmux new-session -d -s resumed 'hermes --resume 20260225_14305
 
 ---
 
+## File Tool Pitfalls ⚠️
+
+Hermes 的 `read_file` 和 `write_file` 工具组合有数据损坏风险。
+
+### 核心坑：read_file 返回带行号前缀
+
+`read_file` 返回的内容格式为 `LINE_NUM|CONTENT`：
+```
+1|{"key": "value"}
+2|{"another": 123}
+```
+
+直接拿这个输出喂给 `write_file`，行号会被写入文件 → JSON/YAML 损坏，程序启动崩溃。
+
+### 正确做法
+
+| 场景 | 做法 |
+|------|------|
+| 读 JSON/YAML 改配置 | 用 `terminal` + `python3 -c` 或 `execute_code`，不要用 `read_file`+`write_file` |
+| 读代码做参考 | `read_file` 安全（只读不改）|
+| 修改代码 | 用 `patch` 工具（精准行级修改）|
+| 写入新文件 | `write_file` 安全（新内容无行号污染）|
+| 操作 SQLite 数据库 | `terminal` + `python3 -c "import sqlite3"`，不要用文件工具碰 `.db` |
+
+### 已证明会坏的场景
+
+- JSON 配置文件（AstrBot `cmd_config.json` 被 `read_file` + `write_file` 损坏过两次）
+- 带 BOM 的 UTF-8 文件（`read_file` 可能破坏 BOM）
+- 任何非纯文本文件格式
+
+### 必须用 read_file 输出写入时
+
+用 `execute_code` strip 行号：
+```python
+from hermes_tools import read_file, write_file
+content = read_file("/path/to/file")
+clean = "\n".join(
+    line.split("|", 1)[1] if "|" in line and line.split("|")[0].strip().isdigit()
+    else line
+    for line in content["content"].split("\n")
+)
+write_file("/path/to/file", clean)
+```
+
 ## Troubleshooting
 
 ### Voice not working

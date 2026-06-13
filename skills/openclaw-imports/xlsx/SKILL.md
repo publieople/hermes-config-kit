@@ -73,6 +73,17 @@ A user may ask you to create, edit, or analyze the contents of an .xlsx file. Yo
 
 **LibreOffice Required for Formula Recalculation**: You can assume LibreOffice is installed for recalculating formula values using the `scripts/recalc.py` script. The script automatically configures LibreOffice on first run, including in sandboxed environments where Unix sockets are restricted (handled by `scripts/office/soffice.py`)
 
+**CRITICAL — Always copy the original file before any openpyxl modifications.** If `wb.save()` fails mid-write, the file becomes a partial zip missing `[Content_Types].xml` and other critical XML files, rendering it unopenable. See `references/xlsx-corruption-recovery.md` for recovery if corruption occurs.
+
+### Pivot Table Limitation
+
+**openpyxl CANNOT create pivot tables from scratch.** The `pivot.table` module is read-only (preserves existing pivots only). When tasks require "creating a pivot table":
+
+1. **Preferred**: Compute with `pandas.pivot_table()`, write values to target cells with openpyxl formatting
+2. **Avoid**: LibreOffice UNO macros for pivot creation — they hang/fail silently in headless mode
+
+See `references/pivot-table-workaround.md` for complete guidance.
+
 ## Reading and analyzing data
 
 ### Data analysis with pandas
@@ -240,6 +251,9 @@ Quick checks to ensure formulas work correctly:
 - [ ] **Division by zero**: Check denominators before using `/` in formulas (#DIV/0!)
 - [ ] **Wrong references**: Verify all cell references point to intended cells (#REF!)
 - [ ] **Cross-sheet references**: Use correct format (Sheet1!A1) for linking sheets
+- [ ] **Save failure → file corruption**: If `wb.save()` raises, the file is a partial zip. Always copy the original first. See `references/xlsx-corruption-recovery.md` for recovery.
+- [ ] **Pivot table creation**: openpyxl cannot create pivot tables. Use pandas `pivot_table()` + write to cells. See `references/pivot-table-workaround.md`.
+- [ ] **TableStyleInfo lost on re-save**: After modifying a file that already has a table, re-verify `table.tableStyleInfo` is set before final save — it can be silently dropped.
 
 ### Formula Testing Strategy
 - [ ] **Start small**: Test formulas on 2-3 cells before applying broadly

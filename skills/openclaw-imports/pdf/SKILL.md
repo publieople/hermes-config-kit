@@ -272,6 +272,27 @@ for i, image in enumerate(images):
 print(text)
 ```
 
+### Extract Text When pdftotext/pypdf Return Empty (Chinese/Scanned PDFs)
+
+When `pdftotext` produces no output or `pypdf` can't extract text (common with Chinese academic PDFs, scanned documents, or image-based PDFs), use the **pdftoppm → mmx vision** fallback chain. This avoids installing OCR packages and works with any content:
+
+```bash
+# 1. Convert PDF pages to JPEG images (one per page)
+pdftoppm -jpeg -r 200 "document.pdf" /tmp/pdf_page
+
+# 2. Read key pages with mmx vision (MiniMax VLM)
+mmx vision describe --image /tmp/pdf_page-01.jpg \
+  --prompt "逐字描述所有文字内容" --output json --quiet
+
+# 3. For multi-page docs, read TOC first (usually page 3-4), then target specific pages
+```
+
+**Pitfalls:**
+- `pdftoppm` is part of `poppler-utils` (usually pre-installed on Linux)
+- Large PDFs (20+ pages): read the TOC/contents page first, then selectively read relevant pages
+- `mmx vision describe` has a ~30s timeout; use `--quiet` to suppress progress spinners
+- Chinese prompts work best: `"请逐字描述所有文字内容，不要遗漏"`
+
 ### Add Watermark
 ```python
 from pypdf import PdfReader, PdfWriter
@@ -543,6 +564,12 @@ cp ~/resume.pdf "/mnt/c/Users/$(ls /mnt/c/Users/ | grep -v -E 'Public|Default|Al
 | Command line merge | qpdf | `qpdf --empty --pages ...` |
 | OCR scanned PDFs | pytesseract | Convert to image first |
 | Fill PDF forms | pdf-lib or pypdf (see forms.md) | See forms.md |
+| **Chinese academic PDF text extraction** | **pdftoppm + mmx vision** | See "Extract Text When pdftotext Returns Empty" section |
+| **GB/T 7714-2015 citation format** | See `references/gbt7714-2015.md` | Chinese national standard for bibliographic references |
+
+## References
+
+- `references/gbt7714-2015.md` — GB/T 7714-2015 Chinese bibliographic reference format quick reference (Books [M], Journals [J], Dissertations [D], etc.)
 
 ## Next Steps
 

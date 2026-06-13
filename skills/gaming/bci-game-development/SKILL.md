@@ -52,6 +52,8 @@ Hybrid BCI (hBCI) game platform using dual-modal input:
 - `uv` package manager
 - Python 3.11+
 
+Need help choosing hardware? See `references/device-selection.md` for a full comparison of EEG, VR, and combined BCI hardware (international and 国产 options). Key comparison axes: channels, VR integration, signal quality, price, and China availability.
+
 ## Critical: Windows ↔ WSL EEG Bridge
 
 **WSL CANNOT access Bluetooth virtual COM ports** (e.g. NeuroSky's COM3 via Bluetooth dongle). All `/dev/ttyS{N-1}` attempts return `(5, 'Input/output error')`. Even Windows `py.exe` called from WSL gets `PermissionError` if the port is occupied on the Windows side.
