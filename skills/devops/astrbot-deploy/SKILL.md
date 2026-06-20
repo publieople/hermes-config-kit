@@ -54,21 +54,36 @@ AstrBot vX.XX WebUI is ready
 
 ## 3. 后台持久化
 
-WSL 无 systemd user bus 时用 Python subprocess：
+WSL 无 systemd user bus 时用 Python subprocess。
+
+### 方法 A：execute_code 启动（推荐，Hermes 内最稳定）
+
+Hermes 的 `terminal(background=true)` 在 WSL 下存在 bash 终端组问题（`无法设定终端进程组`），输出会丢失且进程可能快速退出。最可靠的方式是从 `execute_code` 中用 `subprocess.Popen` 启动：
 
 ```python
 import subprocess, os
+
+os.chdir("/home/po/astrbot")
+log = open("data/astrbot.log", "w")
+
 proc = subprocess.Popen(
     ["/home/po/.local/bin/astrbot", "run"],
-    cwd="/home/po/astrbot",
-    env={**os.environ, "HOME": "/home/po"},
+    stdout=log, stderr=subprocess.STDOUT,
     start_new_session=True,
+    env={**os.environ, "PYTHONUNBUFFERED": "1"},
 )
+print(f"AstrBot PID: {proc.pid}")
 ```
 
-或写 systemd 服务单元到 `~/.config/systemd/user/astrbot.service`。
+验证：`ss -tlnp | grep -E "6185|6199"` 应看到两个端口监听，`ps aux | grep astrbot` 确认进程存活。
+
+### 方法 B：systemd 服务单元
+
+写 systemd 服务到 `~/.config/systemd/user/astrbot.service`。
 
 ## 4. 密码管理
+
+### CLI 方式（推荐）
 
 ```bash
 cd ~/astrbot
@@ -76,6 +91,29 @@ printf 'NewPass123!\nNewPass123!\n' | /home/po/.local/bin/astrbot password
 ```
 
 ⚠️ **密码修改后必须重启 AstrBot**（杀进程 → 重新启动）。密码要求至少一个大写字母。
+
+### 直接写入配置（绕过 CLI 限制）
+
+当 `astrbot password` CLI 因密码策略拒绝时（如缺少大写字母），可直接写入 MD5 + 标记升级：
+
+```python
+import hashlib, json
+
+password = "your_password"
+md5_hash = hashlib.md5(password.encode()).hexdigest()
+
+with open("data/cmd_config.json", "r", encoding="utf-8-sig") as f:
+    config = json.load(f)
+
+config["dashboard"]["password"] = md5_hash
+config["dashboard"]["password_storage_upgraded"] = False  # 触发下次登录时升级到 PBKDF2
+config["dashboard"]["password_change_required"] = False
+
+with open("data/cmd_config.json", "w", encoding="utf-8-sig") as f:
+    json.dump(config, f, indent=2, ensure_ascii=False)
+```
+
+改完后重启 AstrBot 生效。
 
 ## 5. 对接 NapCatQQ
 
@@ -154,6 +192,7 @@ WebUI → 插件市场，搜以下关键字安装：
 
 ## 踩坑
 
+- **Hermes `terminal(background=true)` 在 WSL 下有终端组问题**：输出仅显示 `bash: 无法设定终端进程组`，AstrBot 的输出完全丢失，进程可能在数秒内退出（exit_code 0 但无输出）。**不要**用后台模式启动 AstrBot。替代方案：(1) `execute_code` + `subprocess.Popen(start_new_session=True)` — 最可靠；(2) `terminal(pty=true)` 前台运行 — 可行但 fish shell 配置可能干扰。
 - **`uv tool install` 输出被抑制**：Hermes 后台 bash 不显示 uv 进度条。用 `HOME=/home/po /home/po/.local/bin/uv ...` 绝对路径 + 前台运行。
 - **Docker 国内拉镜像超时**：直接用 uv，不走 Docker。DaoCloud 等镜像代理也可能超时。
 - **Docker 国内拉镜像超时**：直接用 uv，不走 Docker。
@@ -167,12 +206,59 @@ WebUI → 插件市场，搜以下关键字安装：
 - **AstrBot 会静默重建损坏的 config**：如果 `cmd_config.json` 无法解析，AstrBot 启动时**不会报错而是直接生成默认配置**，导致你手动写的所有设置丢失。写完配置后务必用 `python3 -c "import json; json.load(open('data/cmd_config.json','rb'))"` 验证合法性。
 - **JSON 文件的 BOM 头**：AstrBot 的 `cmd_config.json` 自带 UTF-8 BOM。`execute_code` 沙箱可能因 Python 版本差异报 BOM 错误——这不代表文件损坏，AstrBot 自己能正常读取。
 
+### Self-Learning 插件：DB 启动警告（"数据库尚未启动"）
+
+**症状**：AstrBot 控制台看到三条 WARN 在同一毫秒：
+
+```
+[DomainRouter] 数据库尚未启动，暂跳过数据库操作 (get_pending_style_reviews)
+[DomainRouter] 数据库尚未启动，暂跳过数据库操作 (get_reviewed_persona_update_records)
+[DomainRouter] 数据库尚未启动，暂跳过数据库操作 (get_reviewed_persona_learning_updates)
+```
+
+**根因**：`astrbot_plugin_self_learning/config.py` 中 `DEFAULT_DB_TYPE = "postgresql"`（默认 PostgreSQL），而 WSL 环境无 `asyncpg` 驱动。每次启动先尝试 PostgreSQL（15s 超时）→ 失败 → 回退 SQLite，此窗口内 `_started=False`，WebUI dashboard 自动加载触发的 DB 查询全部被跳过。
+
+**修复**（一行改）：
+
+```python
+# astrbot_plugin_self_learning/config.py 第19行
+DEFAULT_DB_TYPE = "sqlite"  # 原来是 "postgresql"
+```
+
+改后重启 AstrBot 生效。警告无害（DB 最终会回退到 SQLite 成功），但去掉 PostgreSQL 重试可消除时序窗口。
+
 ### 插件渲染相关
 
 - **Pillow 渲染插件需要 CJK 字体**：如 `astrbot_plugin_bangumi_enhance` 等生成图片的插件，依赖 NotoSansCJK 字体。插件初始化时会后台下载，但国内网络直连 GitHub 必失败 → 字体目录为空 → Pillow 降级到 `load_default()` → 渲染白板。解决：手动装字体或软链系统已有中文字体到插件 fonts 目录。详见 `references/bangumi-plugin-rendering.md`。
 
 ### 数据库相关
-- **`begin_dialogs` / `tools` / `skills` 必须是合法 JSON**：`personas` 表中这三个 JSON 列**不能是空字符串 `""`**，必须是 `"[]"` 或 `"{}"`。空字符串会导致 AstrBot 启动时 `json.loads("")` 抛出 `JSONDecodeError` 崩溃。插入数据时务必用 `json.dumps()` 而非硬编码。
+
+#### personas 表列类型速查
+
+SQLAlchemy ORM 对 `personas` 表的列类型定义与实际 SQLite schema 不完全一致。以下列被 ORM 定义为 **JSON 类型**（必须存储合法 JSON 字符串）：
+
+| 列名 | 正确格式 | 错误示例 |
+|------|---------|---------|
+| `system_prompt` | `"系统提示词文本..."` (JSON 包裹的字符串) | `系统提示词文本...` (纯文本,无引号) |
+| `begin_dialogs` | `"[{\"role\":\"user\",...}]"` 或 `"[]"` | `""` (空字符串) |
+| `tools` | `"null"` 或 `"[]"` 或 `"{}"` | `""` (空字符串) |
+| `skills` | `"null"` 或 `"[]"` 或 `"{}"` | `""` (空字符串) |
+| `custom_error_message` | `"报错信息..."` (JSON 包裹的字符串) 或 `null` | `报错信息...` (纯文本,无引号) |
+
+以下列是**非 JSON 类型**（datetime/string/integer），不应被 JSON 引号包裹：
+
+| 列名 | 正确格式 | 错误示例 |
+|------|---------|---------|
+| `created_at` | `2026-06-10 17:25:13.380503` | `"2026-06-10..."` (被 JSON 引号包裹) |
+| `updated_at` | `2026-06-10 17:25:13.380503` | `"2026-06-10..."` |
+| `persona_id` | `魔术师` | `"魔术师"` (被 JSON 引号包裹) |
+| `folder_id` | `null` 或整数 | — |
+| `sort_order` | `0` 或整数 | — |
+
+⚠️ **最常见崩溃原因**：从 WebUI 创建 persona 后再拿到别处数据库操作时，`custom_error_message` 填了纯中文字符串（如 `报错了, 呼叫人神📢`），但 ORM 期望它是 `"报错了, 呼叫人神📢"`（JSON 字符串）。同理 `system_prompt` 填裸文本也会触发 JSON 解析崩溃。崩溃堆栈：`get_personas() → json.loads("")` → `JSONDecodeError: Expecting value`。
+
+- **INSERT 时必须对所有 JSON 列用 `json.dumps()`**：`system_prompt`、`begin_dialogs`、`custom_error_message` 全部要 `json.dumps(val, ensure_ascii=False)`。`tools` 和 `skills` 用 `json.dumps({})` 或 `"null"`。
+- **崩溃诊断**：AstrBot 启动崩溃且堆栈指向 `get_personas()` → `json.loads` 时，逐列检查所有 persona 记录的 JSON 合法性。详见 `references/personas-json-columns.md`。
 - **`begin_dialogs` 格式兼容问题**：某些 AstrBot 版本对预设对话格式敏感——存入 `[{role, content}]` JSON 后 LLM 调用时可能报 `validation error for Message`。报此错时**直接清空字段**（`UPDATE personas SET begin_dialogs='[]'`），让用户通过 WebUI 手动填预设对话。不要再反复尝试不同格式。
 - **MiniMax M3**（2026-06-01 发布）是原生多模态模型，可作为 AstrBot 的聊天+看图统一方案，避免多模态路由插件。详见 `references/minimax-multimodal.md`。
 - **写数据库后必须重启**：直接 SQLite 写入不会热加载，需要 kill 进程重启 AstrBot。
@@ -198,18 +284,30 @@ begin_dialogs = [
     {"role": "user", "content": "用户说的示例"},
     {"role": "assistant", "content": "bot 应该回的示例"},
 ]
+custom_error = "报错了, 呼叫人神📢"
 
 conn.execute("""
     INSERT INTO personas (created_at, updated_at, persona_id, system_prompt,
                           begin_dialogs, tools, skills, custom_error_message,
                           folder_id, sort_order)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-""", (now, now, "persona-id", system_prompt,
-      json.dumps(begin_dialogs, ensure_ascii=False),
-      json.dumps({}), json.dumps({}), "", None, 0))
+""", (
+    now,  # created_at: 纯文本 datetime，不要 JSON 包裹
+    now,  # updated_at: 同上
+    "persona-id",  # persona_id: 纯文本，不要 JSON 包裹
+    json.dumps(system_prompt, ensure_ascii=False),  # ⚠️ 必须 JSON 包裹
+    json.dumps(begin_dialogs, ensure_ascii=False),  # ⚠️ 必须 JSON 包裹
+    json.dumps({}),  # tools: JSON，空对象用 {}
+    json.dumps({}),  # skills: 同上
+    json.dumps(custom_error, ensure_ascii=False),  # ⚠️ 必须 JSON 包裹（或 null）
+    None,  # folder_id
+    0,     # sort_order
+))
 conn.commit()
 conn.close()
 ```
+
+⚠️ **关键**：`system_prompt`、`begin_dialogs`、`custom_error_message` 三个字段在 ORM 中被定义为 JSON 类型，**必须用 `json.dumps()` 包裹**。`created_at`、`updated_at`、`persona_id` 是纯文本/日期类型，**不应 JSON 包裹**。错误地 JSON 包裹日期会导致 `ValueError: Invalid isoformat string`。
 
 然后修改 `cmd_config.json` 中的 `provider_settings.default_personality` 为对应的 `persona_id`，重启 AstrBot。
 

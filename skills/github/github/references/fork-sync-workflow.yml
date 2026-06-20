@@ -1,0 +1,40 @@
+# Ready-to-use GitHub Actions workflow for automated fork sync.
+# Replace UPSTREAM_OWNER, UPSTREAM_REPO, OWNER, REPO.
+#
+# Requires: main branch NOT protected (needed for force-with-lease on rebase).
+# Check protection: gh api repos/OWNER/REPO/branches/main/protection
+# HTTP 404 = unprotected = OK.
+
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "0 3 * * *"       # Daily at 3 AM UTC
+  workflow_dispatch:           # Manual trigger from Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.repository == 'OWNER/REPO'   # Safety: only run on the fork, never upstream
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # Full history needed for rebase
+
+      - name: Sync with upstream
+        run: |
+          git remote add upstream https://github.com/UPSTREAM_OWNER/UPSTREAM_REPO.git
+          git fetch upstream main
+
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          if [ "$BEHIND" -eq 0 ]; then
+            echo "Already up to date (0 commits behind upstream)"
+            exit 0
+          fi
+
+          echo "Upstream is ahead by $BEHIND commit(s), syncing..."
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git rebase upstream/main
+          git push --force-with-lease origin main

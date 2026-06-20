@@ -194,12 +194,24 @@ Key rules:
 
 ### B5: 注册为 Hermes Skill
 
-Symlink the whole repo into Hermes skills directory (so `helpers/`, `scripts/`, etc. resolve relative to `SKILL.md`):
+**两种链接模式**，根据 SKILL.md 位置选择：
+
+**模式 1 — SKILL.md 在仓库根目录**: symlink 整个仓库（`helpers/`、`scripts/` 等相对 SKILL.md 解析）：
 
 ```bash
 mkdir -p ~/.hermes/skills/<category>
 ln -sfn ~/Developer/<repo> ~/.hermes/skills/<category>/<skill-name>
 ```
+
+**模式 2 — SKILL.md 在子目录**（如 `skills/<name>/SKILL.md`）: 只 symlink 该子目录，不要链整个仓库（仓库根有 docs、examples、viewer 等非技能资产）：
+
+```bash
+mkdir -p ~/.hermes/skills/
+ln -sf ~/Developer/<repo>/skills/<skill-name> ~/.hermes/skills/<skill-name>
+# 或等价: ln -sf ~/projects/<repo>/skills/<skill-name> ~/.hermes/skills/<skill-name>
+```
+
+**判定方法**: 查看仓库结构——`ls <repo>/` 看根目录是否有 SKILL.md。如果没有，`find <repo> -name SKILL.md -maxdepth 3` 找到实际位置，按模式 2 处理。
 
 **Category choice rule of thumb:**
 - `productivity/` — most AI tools (video, image, editing)
@@ -380,6 +392,14 @@ WSL 下 GitHub/pypi 下载可能因代理问题不稳定：
   git -c http.proxy=http://127.0.0.1:7890 -c https.proxy=http://127.0.0.1:7890 clone ...
   ```
 - 如果还是超时 → 退化为 GitHub tarball 方式（见 #2）
+- **AtomGit 国内镜像回退**（GitHub 直连 + 代理均超时时使用）: 部分热门开源项目在 [atomgit.com](https://atomgit.com) 有镜像。将 `github.com/<owner>/<repo>` 替换为 `atomgit.com/<owner>/<repo>`。示例：
+  ```bash
+  # GitHub 失败时:
+  git clone --depth 1 https://atomgit.com/hugohe3/ppt-master.git
+  ```
+  ⚠️ 不是所有项目都有镜像——先访问 `https://atomgit.com/<owner>/<repo>` 确认存在。
+
+- **大文件 zip 下载不完整风险**: GitHub archive zip 可能超过 500MB。curl 下载时若中途超时或被限速，文件大小不足且 unzip 报 `End-of-central-directory signature not found`。优先用 git clone（可续传），不用 curl + zip。
 
 #### 代理策略区分：git config vs 环境变量
 

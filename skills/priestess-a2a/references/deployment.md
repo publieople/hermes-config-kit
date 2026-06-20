@@ -4,13 +4,32 @@
 
 **Lab Server:**
 - Ubuntu 24.04, 4×A10 GPU, Python 3.12
-- Fish shell (不支持 heredoc)
-- Hermes Agent: `~/.hermes/hermes-agent/`
+- Fish shell (不支持 heredoc)，tmux 3.6b
+- SSH 只监听 127.0.0.1:22（FRP 本地转发，PasswordAuthentication=no）
+- Hermes Agent: `/data/home/po/.hermes/hermes-agent/`（via `/home` → `/data/home` 软链接）
+- Skills 来源：`https://github.com/publieople/hermes-config-kit`（253 skills）
 - systemd 255, user linger=yes
 - FRP SSH: `po@3722d01e5a6f.ofalias.com -p35043`
+- 磁盘：根分区 98G（18G used），/data 7.3TB（via /dev/sdb XFS）
+- `/data/home/po` 通过 fstab bind mount 到 `/home/po`
+- 关键服务：clash-meta（mihomo at `/home/po/proxy/`），mcdr（MC server at `/data/mcdr/`）
 
 **WSL:**
 - systemd 260, user linger=yes
+- A2A 隧道: systemd user service `a2a-tunnel`，SSH -L 19010:localhost:9010
+
+## 通过 config-kit 部署
+
+除了手动部署外，也可用 config-kit 快速恢复配置：
+
+```bash
+git clone https://github.com/publieople/hermes-config-kit
+cp -r hermes-config-kit/skills/* ~/.hermes/skills/
+cp hermes-config-kit/SOUL.md ~/.hermes/SOUL.md
+cp hermes-config-kit/config.yaml ~/.hermes/config.yaml
+cp hermes-config-kit/scripts/* ~/.hermes/scripts/
+# SOUL.md 需将"魔术师"改为"女祭司"
+```
 
 ## 部署步骤
 

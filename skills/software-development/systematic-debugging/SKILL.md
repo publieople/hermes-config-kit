@@ -311,6 +311,14 @@ If you catch yourself thinking:
 For visual positioning and alignment bugs involving browser rendering:
 see `references/frontend-visual-debugging.md` in this skill directory.
 
+## Language-Specific Debugging Tools
+
+For Python-specific debugging (pdb, debugpy, remote-pdb):
+see `references/python-debugging.md`
+
+For Node.js-specific debugging (node-inspect, CDP, Vitest):
+see `references/node-debugging.md`
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |

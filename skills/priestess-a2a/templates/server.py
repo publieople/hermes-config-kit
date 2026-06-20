@@ -3,6 +3,9 @@
 
 Usage:
     PYTHONPATH=~/.hermes/hermes-agent python3 server.py
+
+EnvironmentFile (~/.hermes/.env):
+    DEEPSEEK_API_KEY=sk-...
 """
 
 import os, sys
