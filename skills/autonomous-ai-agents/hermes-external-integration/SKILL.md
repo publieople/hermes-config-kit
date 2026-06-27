@@ -171,6 +171,7 @@ ls gateway/platforms/<platform>.py
 - **API Server is stateless** via `/v1/chat/completions` — use `/v1/responses` with `previous_response_id` for stateful multi-turn conversations.
 - **Firewall/Antivirus** on Windows may block WSL port forwarding. Check with `wsl --list --verbose` to find the WSL IP.
 - **Proxy conflicts** — if Hermes uses proxy (Clash/etc.), the API Server's listening address needs to be explicitly set, not relying on automatic routing.
+- **API Server rejected invalid API key after Hermes update or restart** — The Everywhere extension (and other API Server clients) caches the API key. After a Hermes update, the key may appear unchanged in `.env` but the client's cached key is stale or misconfigured. **Diagnosis:** `grep "rejected invalid API key" ~/.hermes/logs/gateway.log` — if the `user_agent` includes `Everywhere/X.Y.Z`, the Everywhere extension is using a wrong key. **Fix:** (1) Find the current key with `grep API_SERVER_KEY ~/.hermes/.env`, (2) verify it works with `curl -s http://127.0.0.1:8642/v1/models -H "Authorization: Bearer $API_SERVER_KEY"`, (3) update the key in Everywhere's settings. **Note:** `API_SERVER_KEY` is distinct from `HERMES_GATEWAY_TOKEN` — the former authenticates external API clients, the latter is the gateway's own admin token.
 
 ## Post-Connection Optimization
 

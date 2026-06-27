@@ -294,6 +294,38 @@ The script returns JSON with error details:
 - For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`
 - Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`
 
+## Platform-Specific Pitfalls
+
+### Python 3.14 + openpyxl: `Fill() takes no arguments`
+
+openpyxl (all versions up to 3.1.5) crashes on **Python 3.14** (Arch, etc.) with:
+
+```
+TypeError: Fill() takes no arguments
+```
+
+This is a known incompatibility — the `__init_subclass__` change in Python 3.14 breaks openpyxl's style deserialization. Neither `load_workbook()` nor pandas (which uses openpyxl backend) works. Creating a Python 3.12 venv with `uv venv --python 3.12` doesn't help — the same file can trigger the same error in 3.12 if its styles.xml is complex.
+
+**Fallback: Parse the raw XML inside the xlsx zip.** xlsx is a ZIP archive. Unzip it, read `xl/sharedStrings.xml` for string table, then `xl/worksheets/sheet1.xml` for cell data. Use `xml.etree.ElementTree` to walk rows and cells, resolving `t="s"` cells against the shared strings index.
+
+Recipe (see `references/xlsx-xml-fallback.md` for full script):
+
+```python
+import zipfile, xml.etree.ElementTree as ET
+ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+with zipfile.ZipFile('file.xlsx') as z:
+    # String table
+    ss = ET.parse(z.open('xl/sharedStrings.xml'))
+    strings = [''.join(t.text or '' for t in si.iter(f'{{{ns}}}t')) for si in ss.getroot()]
+    # Sheet data
+    sheet = ET.parse(z.open('xl/worksheets/sheet1.xml'))
+    for row in sheet.findall(f'.//{{{ns}}}row'):
+        for c in row.findall(f'{{{ns}}}c'):
+            v = c.find(f'{{{ns}}}v')
+            val = strings[int(v.text)] if c.get('t') == 's' and v is not None else (v.text if v is not None else '')
+```
+
 ## Code Style Guidelines
 **IMPORTANT**: When generating Python code for Excel operations:
 - Write minimal, concise Python code without unnecessary comments

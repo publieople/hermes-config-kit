@@ -354,6 +354,8 @@ For detailed testing patterns, examples, and anti-patterns across frameworks, se
 
 For retrofitting tests to existing codebases with zero prior tests, see `references/characterization-tests.md`.
 
+For React 19 + Vitest + jsdom testing (act issue, mock patterns, config), see `references/react19-testing.md`.
+
 ## Common Rationalizations
 
 | Rationalization | Reality |

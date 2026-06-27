@@ -116,6 +116,83 @@ for i, text in enumerate(extra_paragraphs):
 ## ⚠️ Key Pitfall: lxml addprevious() Reverses Order
 `element.addprevious(new)` inserts `new` immediately before `element`. In a loop, each subsequent insertion also goes right before `element`, pushing earlier insertions down — resulting in **reversed order**. Always use `parent.insert(ref_idx + i, new_p)` instead.
 
+## ⚠️ Pitfall: Don't Use `para.runs` for Blank Filling
+
+`python-docx`'s `para.runs` order does NOT reliably reflect visual/text order of the paragraph — runs can be nested inside hyperlinks, fields, or split mid-word by Word's XML structure. For filling blanks in templates (especially 任务书/实训报告 with mixed code and Chinese text), use **raw XML parsing** instead:
+
+```python
+import zipfile, re
+from xml.etree import ElementTree as ET
+NS = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+
+with zipfile.ZipFile('template.docx') as z:
+    root = ET.fromstring(z.read('word/document.xml'))
+
+# Find ALL <w:t> elements with blanks, in TRUE document order
+blanks = [t for t in root.iter(f'{{{NS}}}t')
+          if t.text and re.search(r'_{3,}', t.text)]
+
+# Replace one blank at a time from an ordered answer list
+ans_idx = 0
+for t_elem in blanks:
+    text = t_elem.text
+    n = len(re.findall(r'_{3,}', text))
+    for _ in range(n):
+        if ans_idx < len(answers) and answers[ans_idx] is not None:
+            text = re.sub(r'_{3,}', str(answers[ans_idx]), text, count=1)
+        ans_idx += 1
+    t_elem.text = text
+
+# Save
+output_xml = ET.tostring(root, encoding='unicode')
+with zipfile.ZipFile('template.docx') as zin:
+    with zipfile.ZipFile('filled.docx', 'w', zipfile.ZIP_DEFLATED) as zout:
+        for item in zin.infolist():
+            zout.writestr(item, output_xml
+                if item.filename == 'word/document.xml'
+                else zin.read(item.filename))
+```
+
+## ⚠️ Pitfall: 任务书填充习惯 (User-Specific)
+
+以下为当前用户（冯周杰）的填充偏好，每次填任务书/实训报告时必须遵守：
+
+1. **组别不填**：个人信息表格中的「组别」字段始终留空（保持 `__________`），不要填任何数字。
+2. **多选一只填选中的**：模板中如有「选择一项完成」的多项目并列（如 Project A/B/C），只填充用户选定的那一个项目，其余项目保留空白 `___`。
+3. **问答组必须填满**：模板中有几组 Q&A 槽位就填几组，不要只填一组。每组都必须匹配内容。
+
+## ⚠️ Pitfall: Q: 前缀与空白在不同 Run 中
+
+任务书中的问答槽位常见格式：`Q: ` 在一个 `<w:r>` 中，`________________________` 在另一个 `<w:r>` 中。用 `replace_run_text` 匹配完整字符串 `"Q: ________________________"` 会失败，因为没有一个单独的 run 包含全部文字。
+
+**正确做法**：先打印每个 paragraph 的 run 结构确认边界，然后用 `p.runs[1].text = answer` 直接赋值空白 run：
+
+```python
+# 1. 诊断：打印段落 run 结构
+for i in [77, 78, 80, 81]:
+    p = doc.paragraphs[i]
+    for j, r in enumerate(p.runs):
+        print(f"  run[{j}]: \"{r.text}\"")
+# 输出示例: run[0]: "Q: " / run[1]: "________________________"
+
+# 2. 直接替换空白 run
+doc.paragraphs[77].runs[1].text = "如果目标丢失了怎么办？"
+doc.paragraphs[78].runs[1].text = "系统切换到 SCANNING 状态..."
+```
+
+## ⚠️ Pitfall: Code Dunders Confused with Blanks
+
+When templates contain Python code examples (e.g., `paddle.__version__`, `__name__`), regex `_{2,}` will match the double underscores as blanks, injecting answers into code and breaking the fill. **Always use `_{3,}` (3+ underscores)** to distinguish real fill-in blanks from dunder names.
+
+Before filling, scan the template for this issue:
+```python
+# Audit: print all <w:t> elements that would be matched
+for t in root.iter(f'{{{NS}}}t'):
+    if t.text and re.search(r'_{3,}', t.text):
+        print(f'  [{t.text[:80]}]')
+# Manually count blanks per element, build answers list
+```
+
 ## Chinese Font Size Table
 | 字号 | pt | DOCX half-pts |
 |------|-----|---------------|

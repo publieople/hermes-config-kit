@@ -142,6 +142,55 @@ write_file("/path/to/file", clean)
 
 详见 `references/browser-incompatible-packages.md`。
 
+## 核心坑 4：openpyxl 在 Python 3.14 下无法读取 xlsx
+
+Arch Linux 的 openpyxl 包与 Python 3.14 存在兼容问题（`TypeError: Fill() takes no arguments`），pandas 读取 xlsx 也会因相同原因失败。Python 3.12 venv 中安装的 openpyxl 同样受影响。
+
+**症状：**
+```
+TypeError: expected <class 'openpyxl.styles.fills.Fill'>
+```
+
+**根本原因：** openpyxl 的 stylesheet 解析在遇到某些 xlsx 样式时触发类型检查 bug，与 Python 版本无关（不同 Python 版本都可能遇到）。
+
+**解决方案 — 直接解析 xlsx 原始 XML：**
+
+xlsx 本质是 zip 文件，解析其内部 XML 可完全绕过 openpyxl：
+
+```bash
+# 1. 解压
+unzip file.xlsx -d /tmp/xl/
+
+# 2. 读 sharedStrings.xml（文本字典）
+python3 -c "
+import xml.etree.ElementTree as ET
+ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+tree = ET.parse('/tmp/xl/xl/sharedStrings.xml')
+strings = []
+for si in tree.getroot():
+    texts = [t.text or '' for t in si.iter(f'{{{ns}}}t')]
+    strings.append(''.join(texts))
+# strings[0] = '姓名', strings[1] = '张三', ...
+
+# 3. 读 sheet1.xml（单元格引用 sharedStrings 索引）
+tree = ET.parse('/tmp/xl/xl/worksheets/sheet1.xml')
+for row in tree.findall(f'.//{{{ns}}}row'):
+    for c in row.findall(f'{{{ns}}}c'):
+        ref = c.get('r')        # 'A1'
+        t = c.get('t', '')      # 's' = shared string
+        v = c.find(f'{{{ns}}}v')
+        if v is not None and v.text:
+            val = strings[int(v.text)] if t == 's' else v.text
+"
+
+# 4. 日期序列号转换（Excel 日期从 1900-01-01 起算）
+from datetime import datetime, timedelta
+def excel_date(serial):
+    return (datetime(1899, 12, 30) + timedelta(days=int(serial))).strftime('%Y-%m-%d')
+```
+
+**前置条件：** 文件需先从 NTFS 分区拷贝到 `/tmp`（NTFS 权限问题可能导致读取失败）。
+
 ## 安全操作速查
 
 | 操作 | 用这个 | 注意事项 |

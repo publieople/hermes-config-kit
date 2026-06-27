@@ -14,6 +14,7 @@ prerequisites:
 > [AstrBot](https://github.com/AstrBotDevs/AstrBot) 作为 QQ 机器人方案。
 > 以下内容为历史参考和恢复指南。如需重新启用，按本文档恢复即可。
 > AstrBot 部署笔记见 `references/astrbot-deploy.md`。
+> 群员盒武器数据接入方案见 `references/astrbot-box-weapon.md`。
 
 ## 架构
 

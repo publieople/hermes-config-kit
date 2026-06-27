@@ -183,6 +183,7 @@ Honesty about what you couldn't verify is more valuable than false confidence.
 - Not reading `package.json` / dependency files before implementing
 - Delivering code without source citations for framework-specific decisions
 - Fetching an entire docs site when only one page is relevant
+- **Giving the user shell commands or configuration steps without first reading the official docs.** The user will say "你查一下文档再说" when you do this. Always check the official README/docs/source before telling someone to run a command.
 
 ## Verification
 

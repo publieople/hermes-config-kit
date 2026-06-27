@@ -319,6 +319,11 @@ see `references/python-debugging.md`
 For Node.js-specific debugging (node-inspect, CDP, Vitest):
 see `references/node-debugging.md`
 
+## Browser App Pitfalls
+
+For systematic root-cause classification of common browser app bugs (blob URLs, encoding detection, CSS conflicts, keyboard shortcuts, React 19 + vitest):
+see `references/browser-app-pitfalls.md`
+
 ## Quick Reference
 
 | Phase | Key Activities | Success Criteria |

@@ -381,6 +381,7 @@ sections: [{
 - **Landscape: pass portrait dimensions** - docx-js swaps width/height internally; pass short edge as `width`, long edge as `height`, and set `orientation: PageOrientation.LANDSCAPE`
 - **Never use `\n`** - use separate Paragraph elements
 - **Never use unicode bullets** - use `LevelFormat.BULLET` with numbering config
+- **Images: python-docx `add_picture()` is unreliable** for existing documents — adds rels but may skip `<w:drawing>` in document.xml. Use unpack → XML edit → repack instead. See `references/image-embedding-workaround.md` for the complete recipe.
 - **PageBreak must be in Paragraph** - standalone creates invalid XML
 - **ImageRun requires `type`** - always specify png/jpg/etc
 - **Always set table `width` with DXA** - never use `WidthType.PERCENTAGE` (breaks in Google Docs)
@@ -484,6 +485,69 @@ def set_cell_text(cell, new_text):
         run.font.size = Pt(12)
 ```
 
+### Embedding Images in Existing Documents (CRITICAL PITFALL)
+
+**`run.add_picture()` does NOT reliably write the `<w:drawing>` element to `document.xml`.** The image file is added to the zip and the relationship is created in `_rels/document.xml.rels`, but the actual drawing reference may be silently missing from the document body — the file grows in size (contains the image bytes) but nothing renders in Word.
+
+**Detection:** After `doc.save()`, verify the image reference made it into `document.xml`:
+
+```python
+import zipfile
+with zipfile.ZipFile("output.docx") as zf:
+    xml = zf.read("word/document.xml").decode()
+    has_ref = "rId" in xml  # or search for the specific rId
+    print(f"Image reference in XML: {has_ref}")
+```
+
+**Workaround:** When `add_picture` fails, fall back to raw XML editing:
+
+1. Unzip the saved docx: `unzip docx -d unpacked/`
+2. Verify the image is at `word/media/imageN.png` and its relationship (`rId9`) exists in `word/_rels/document.xml.rels`
+3. Manually insert the `<w:drawing>` element into the target cell in `word/document.xml` — replace empty runs with a drawing run:
+   ```xml
+   <w:r>
+     <w:rPr><w:noProof/></w:rPr>
+     <w:drawing>
+       <wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="...wordprocessingDrawing">
+         <wp:extent cx="5029200" cy="3352800"/>
+         <wp:docPr id="1" name="image.png"/>
+         <a:graphic xmlns:a="...drawingml/2006/main">
+           <a:graphicData uri="...drawingml/2006/picture">
+             <pic:pic xmlns:pic="...drawingml/2006/picture">
+               <pic:nvPicPr>
+                 <pic:cNvPr id="0" name="image.png"/>
+                 <pic:cNvPicPr/>
+               </pic:nvPicPr>
+               <pic:blipFill>
+                 <a:blip r:embed="rId9"/>
+                 <a:stretch><a:fillRect/></a:stretch>
+               </pic:blipFill>
+               <pic:spPr>
+                 <a:xfrm>
+                   <a:off x="0" y="0"/>
+                   <a:ext cx="5029200" cy="3352800"/>
+                 </a:xfrm>
+                 <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+               </pic:spPr>
+             </pic:pic>
+           </a:graphicData>
+         </a:graphic>
+       </wp:inline>
+     </w:drawing>
+   </w:r>
+   ```
+   EMU conversion: `inches * 914400` (e.g., 5.5" width = 5,029,200 EMU).
+4. Repack: use Python's `zipfile` to write a new docx from the unpacked directory:
+   ```python
+   import zipfile, os
+   with zipfile.ZipFile("output.docx", "w", zipfile.ZIP_DEFLATED) as zf:
+       for root, dirs, files in os.walk("unpacked/"):
+           for f in files:
+               full = os.path.join(root, f)
+               zf.write(full, os.path.relpath(full, "unpacked/"))
+   ```
+5. Verify the repacked docx contains `rId` in its document.xml.
+
 ### Save
 
 ```python
@@ -508,6 +572,21 @@ doc.save("output.docx")
 
 3. **Multi-paragraph content:** Use `\n\n` in Python strings (which become separate paragraphs in the DOCX) or write separate `set_para_text` calls for adjacent empty paragraphs.
 
+### Multi-Run Blank Filling (CRITICAL)
+
+**Pitfall:** When a paragraph's blanks (`_____`) are split across multiple `<w:r>` elements, searching `paragraph.text` and replacing in individual runs WILL fail — the positional mapping between concatenated text and run boundaries is fragile.
+
+**Fix:** Always inspect the template at run-level granularity first, then target each blank by exact `(paragraph_index, run_index)`. Use `re.sub(r'_{3,}', answer, run.text, count=1)` for single blanks per run.
+
+Full details and verification checklist: `references/template-filling-pitfalls.md`
+
+### Delivery Checklist
+
+Before sending a filled .docx to the user, always:
+1. Re-load the saved document and verify ALL expected values appear in their paragraphs
+2. Scan the entire document (paragraphs + tables) for any remaining `_{3,}` underscore patterns
+3. If the user provided specific values (student ID, name, etc.), double-check those first
+
 ---
 
 ## Editing Existing Documents (XML Approach)
@@ -521,6 +600,16 @@ doc.save("output.docx")
 python scripts/office/unpack.py document.docx unpacked/
 ```
 Extracts XML, pretty-prints, merges adjacent runs, and converts smart quotes to XML entities (`&#x201C;` etc.) so they survive editing. Use `--merge-runs false` to skip run merging.
+
+**Fallback when `defusedxml` is not installed:** Use `unzip` directly:
+```bash
+mkdir unpacked/ && unzip document.docx -d unpacked/
+```
+If neither `unzip` nor `defusedxml` is available, use Python's `zipfile`:
+```python
+import zipfile, os
+with zipfile.ZipFile("document.docx") as zf: zf.extractall("unpacked/")
+```
 
 ### Step 2: Edit XML
 
@@ -555,6 +644,8 @@ Then add markers to document.xml (see Comments in XML Reference).
 python scripts/office/pack.py unpacked/ output.docx --original document.docx
 ```
 Validates with auto-repair, condenses XML, and creates DOCX. Use `--validate false` to skip.
+
+**Fallback when `pack.py`/`defusedxml` is unavailable:** Use Python's `zipfile` to repack directly — see `references/repack-with-zipfile.md`.
 
 **Auto-repair will fix:**
 - `durableId` >= 0x7FFFFFFF (regenerates valid ID)

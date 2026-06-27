@@ -87,6 +87,7 @@ category: software-development
 
 | 需求类型 | 搜索关键词模板 | 示例 |
 |---------|--------------|------|
+| AstrBot 插件 | `astrbot <功能> plugin site:github.com` | `astrbot cosyvoice TTS 语音 plugin` |
 | 格式解析/编码 | `<format> <language> library browser` | `toml parser javascript browser` |
 | 检测/识别 | `<thing> detection <language> npm` | `encoding detection javascript npm` |
 | UI 组件 | `<component> react npm lightweight` | `csv table react npm lightweight` |

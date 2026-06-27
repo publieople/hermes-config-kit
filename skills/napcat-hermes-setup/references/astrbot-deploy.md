@@ -132,3 +132,37 @@ git remote remove fork
 | 6099 | NapCat WebUI | Windows 端 |
 | 8646 | Hermes NapCat | ❌ 已停用 |
 | 8642 | Hermes API Server | ✅ 仅 feishu |
+
+## 进程管理（systemd）
+
+AstrBot 通过 systemd 服务管理（`/etc/systemd/system/astrbot.service`）：
+
+```bash
+sudo systemctl restart astrbot  # 重启
+sudo systemctl status astrbot   # 状态
+sudo journalctl -u astrbot -f   # 实时日志
+```
+
+**不要**用 `kill` + 手动重启——用 systemd。
+
+## 插件热重载
+
+AstrBot 支持插件热加载，新插件放到 `data/plugins/` 后自动检测。
+加载失败的插件可通过 API 单独重试：
+```bash
+curl -X POST http://localhost:6185/api/plugin/reload-failed \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"dir_name": "插件目录名"}'
+```
+
+## 常见故障
+
+### LLM API 挂死导致不回复
+症状：进程运行但日志停止更新，所有消息不回复。
+诊断：`ss -tnp | grep astrbot` 看到 CLOSE-WAIT 连接。
+修复：`sudo systemctl restart astrbot`
+
+### 知识库检索不匹配 QQ 号
+KB 自动检索用消息文本做 query，不是发送者 QQ 号。
+修复：设 `"kb_agentic_mode": true` + 人格设定加身份识别规则。

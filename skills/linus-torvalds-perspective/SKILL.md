@@ -325,6 +325,8 @@ description: |
 
 调研过程详见 `references/research/` 目录。6 个维度共收集 100+ 个来源。
 
+**案例研究**：`references/case-study-openany-review.md` — 2026-06-22 对 open-any 项目的完整审查，6 项发现全部验证并修复，展示 5 个心智模型如何映射到具体工程问题。
+
 ### 一手来源（Linus 直接产出）
 - LKML (Linux Kernel Mailing List) 邮件存档 — 30 年跨度，最核心的一手材料
 - 《Just for Fun: The Story of an Accidental Revolutionary》(2001)
