@@ -129,6 +129,52 @@ curl -L https://github.com/...
 HTTPS_PROXY=http://127.0.0.1:7890 curl -L https://github.com/...
 ```
 
+## Hermes 内部进程（Web 插件、Python 子进程）的代理
+
+Hermes 的 web 搜索插件（Tavily）用 httpx 发请求，httpx 读 `HTTP_PROXY`/`HTTPS_PROXY` 环境变量。但 Hermes 的 Python 进程**不继承 shell 的代理变量**。
+
+### 解决方案：写入 `~/.hermes/.env`
+
+```bash
+echo 'HTTP_PROXY=http://127.0.0.1:7890' >> ~/.hermes/.env
+echo 'HTTPS_PROXY=http://127.0.0.1:7890' >> ~/.hermes/.env
+```
+
+Hermes 在启动时加载 `.env`，后续所有 httpx/requests 调用自动走代理。
+
+**注意：当前 Hermes 进程不会重读 `.env`，修改后需 `/new` 重启会话生效。**
+
+### 追加说明
+
+Tavily 插件的 `_tavily_request()` 在 `provider.py` 第57行：
+```python
+response = httpx.post(url, json=payload, timeout=60)
+```
+httpx 使用 `HTTP_PROXY`（注意是大写）作为代理 URL，不走任何 Hermes 内部代理配置。`HTTP_PROXY`（小写）也被 httpx 识别，但部分 Python HTTP 库只认大写版本。建议 `.env` 里同时设大写和小写。
+
+### Tavily 域名
+
+- 正式：`https://api.tavily.com`（GFW 阻断，需代理）
+- 可通过 `TAVILY_BASE_URL` 环境变量覆盖（需要自建反代）
+
+### 调试 Tavily 连通性
+
+```bash
+# 直连测试 — 确认 GFW 状态
+curl -s --max-time 10 -X POST "https://api.tavily.com/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test","api_key":"YOUR_KEY"}'
+# 预期失败：Connection reset by peer（GFW 阻断）
+
+# 代理测试
+curl -s -x http://127.0.0.1:7890 --max-time 10 -X POST "https://api.tavily.com/search" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test","api_key":"YOUR_KEY"}'
+# 预期：正常返回 JSON 结果
+```
+
+Hermes 已配置 `env_passthrough`（`~/.hermes/config.yaml:79-82`），包含 `http_proxy`、`https_proxy`、`ALL_PROXY`。这是 shell → 子进程的透传，与 Python 内 httpx 直接读 env 的行为互补。
+
 ## 常见陷阱
 
 1. **WSL 重启后 localhost 转发可能变化** — 如果 `127.0.0.1:7890` 不通，检查 Windows 侧 Clash 是否在运行，以及 WSL 是否能访问 Windows 的 localhost（通常可以）

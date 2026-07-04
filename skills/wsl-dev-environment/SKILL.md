@@ -246,12 +246,33 @@ export TMPDIR=~/tmp
 ```
 或者清理 modelscope 缓存：`rm -rf /tmp/ms_cache`
 
+### Fish shell: `set -x` 环境变量不生效
+
+Fish 的 `set -x VAR val; cmd` 在某些场景（如 `uv tool upgrade`）环境变量不会被命令继承。
+用 `env` 前缀替代：
+
+```fish
+# ❌ 不生效
+set -x UV_HTTP_TIMEOUT 300; uv tool upgrade astrbot
+
+# ✅ 生效
+env UV_HTTP_TIMEOUT=300 uv tool upgrade astrbot
+```
+
 ### uv.toml 国内镜像
 ```toml
 [pip]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 ```
 创建于项目根目录即可。与 `pyproject.toml` 中的 `[tool.uv]` 冲突时 uv.toml 优先。
+
+### `uv tool` 命令走镜像（不依赖 uv.toml）
+
+`uv tool upgrade/install` 不受项目 `uv.toml` 控制。大包超时时直接设 `UV_INDEX_URL`：
+
+```bash
+env UV_HTTP_TIMEOUT=300 UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple uv tool upgrade astrbot --python 3.12
+```
 
 ### PYTHONPATH 全局污染（Hermes Agent）
 

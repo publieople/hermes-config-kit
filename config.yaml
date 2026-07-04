@@ -1,17 +1,13 @@
 model:
-  default: deepseek-v4-pro
-  provider: deepseek
-  base_url: https://api.deepseek.com/v1
-  api_key: YOUR_API_KEY
-providers: {}
+  default: MiniMax-M3
+  provider: minimax-cn
+  base_url: https://api.minimaxi.com/anthropic
 fallback_providers: []
-credential_pool_strategies: {}
 toolsets:
   - hermes-cli
-max_concurrent_sessions: null
 max_live_sessions: 16
 agent:
-  max_turns: 90
+  max_turns: 150
   gateway_timeout: 1800
   restart_drain_timeout: 60
   api_max_retries: 3
@@ -83,7 +79,6 @@ terminal:
   auto_source_bashrc: true
   docker_image: nikolaik/python-nodejs:python3.11-nodejs20
   docker_forward_env: []
-  docker_env: {}
   singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
   modal_image: nikolaik/python-nodejs:python3.11-nodejs20
   daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
@@ -128,7 +123,6 @@ checkpoints:
   retention_days: 7
   delete_orphans: true
   min_interval_hours: 24
-context_file_max_chars: null
 file_read_max_chars: 100000
 mcp_discovery_timeout: 1.5
 tool_output:
@@ -164,7 +158,6 @@ kanban:
   worker_log_backup_count: 1
   orchestrator_profile: ''
   default_assignee: ''
-  max_in_progress_per_profile: null
   auto_decompose: true
   auto_decompose_per_tick: 3
   dispatch_stale_timeout_seconds: 14400
@@ -192,7 +185,6 @@ auxiliary:
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 120
-    extra_body: {}
     download_timeout: 30
   web_extract:
     provider: auto
@@ -200,42 +192,36 @@ auxiliary:
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 360
-    extra_body: {}
   compression:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 120
-    extra_body: {}
   skills_hub:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 30
-    extra_body: {}
   approval:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 30
-    extra_body: {}
   mcp:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 30
-    extra_body: {}
   title_generation:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 30
-    extra_body: {}
     language: ''
   tts_audio_tags:
     provider: auto
@@ -243,63 +229,54 @@ auxiliary:
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 30
-    extra_body: {}
   triage_specifier:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 120
-    extra_body: {}
   kanban_decomposer:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 180
-    extra_body: {}
   profile_describer:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 60
-    extra_body: {}
   curator:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 600
-    extra_body: {}
   monitor:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 60
-    extra_body: {}
   background_review:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 120
-    extra_body: {}
   moa_reference:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 600
-    extra_body: {}
   moa_aggregator:
     provider: auto
     model: ''
     base_url: ''
     api_key: YOUR_API_KEY
     timeout: 600
-    extra_body: {}
   session_search:
     provider: auto
     model: ''
@@ -345,7 +322,6 @@ display:
     last_lines: 2
   interim_assistant_messages: true
   tool_progress_command: false
-  tool_progress_overrides: {}
   tool_preview_length: 0
   tool_progress_grouping: accumulate
   reasoning_style: code
@@ -473,10 +449,10 @@ delegation:
   child_timeout_seconds: 600
   reasoning_effort: ''
   max_concurrent_children: 3
-  max_async_children: 3
   max_spawn_depth: 1
   orchestrator_enabled: true
   subagent_auto_approve: false
+  max_async_children: 3
 prefill_messages_file: ''
 goals:
   max_turns: 20
@@ -493,10 +469,10 @@ moa:
       aggregator:
         provider: openrouter
         model: anthropic/claude-opus-4.8
-      reference_temperature: 0.6
-      aggregator_temperature: 0.4
       max_tokens: 4096
       enabled: true
+      reference_temperature: 0.6
+      aggregator_temperature: 0.4
 skills:
   external_dirs: []
   template_vars: true
@@ -505,265 +481,6 @@ skills:
   guard_agent_created: false
   write_approval: false
   creation_nudge_interval: 15
-  platform_disabled:
-    napcat:
-      - _archive/codex-duplicate-of-claude-code
-      - _archive/multi-search-engine
-      - _archive/openclaw-imports/code
-      - _archive/openclaw-imports/github
-      - _archive/openclaw-imports/notion
-      - _archive/openclaw-imports/openclaw-tavily-search
-      - _archive/openclaw-imports/pdf-generator
-      - _archive/openclaw-imports/remotion-video-toolkit
-      - _archive/openclaw-imports/self-improving-agent
-      - _archive/openclaw-imports/skill-vetter
-      - _archive/openclaw-imports/sql-toolkit
-      - _archive/pptx-duplicate-of-powerpoint
-      - _archive/skill-finder-cn
-      - _archive/somark-document-parser
-      - _archive/subagent-driven-development
-      - a2a-hermes-bridge-deploy
-      - api/liciyuan-api
-      - api/xingzhige-api
-      - apple/apple-notes
-      - apple/apple-reminders
-      - apple/findmy
-      - apple/imessage
-      - apple/macos-computer-use
-      - autonomous-ai-agents/claude-code
-      - autonomous-ai-agents/codex
-      - autonomous-ai-agents/hermes-external-integration
-      - autonomous-ai-agents/kanban-codex-lane
-      - autonomous-ai-agents/opencode
-      - ble-protocol-extraction
-      - career/career-job-hunting
-      - cloakbrowser-douyin-scraper
-      - comet
-      - comet/comet-archive
-      - comet/comet-build
-      - comet/comet-design
-      - comet/comet-hotfix
-      - comet/comet-open
-      - comet/comet-tweak
-      - comet/comet-verify
-      - comfyui-api
-      - comfyui-api/ai-drama-pipeline-route-planning
-      - comfyui-api/flux2-klein-character-consistency
-      - comfyui-api/wan2.2-flf2v-pipeline
-      - creative/architecture-diagram
-      - creative/ascii-art
-      - creative/ascii-video
-      - creative/baoyu-article-illustrator
-      - creative/baoyu-comic
-      - creative/baoyu-infographic
-      - creative/claude-design
-      - creative/comfyui
-      - creative/creative-ideation
-      - creative/design-md
-      - creative/excalidraw
-      - creative/humanizer
-      - creative/manim-video
-      - creative/open-design/design-review
-      - creative/open-design/pptx-generator
-      - creative/open-design/pptx-html-fidelity-audit
-      - creative/open-design/reference-design-contract
-      - creative/open-design/release-notes-one-pager
-      - creative/open-design/remotion
-      - creative/open-design/resume-modern
-      - creative/open-design/screenshots-marketing
-      - creative/open-design/shadcn-ui
-      - creative/open-design/shader-dev
-      - creative/open-design/slides
-      - creative/open-design/social-reddit-card
-      - creative/open-design/social-spotify-card
-      - creative/open-design/social-x-post-card
-      - creative/open-design/stitch-loop
-      - creative/open-design/stitch-skill
-      - creative/open-design/swiftui-design
-      - creative/open-design/theme-factory
-      - creative/open-design/threejs
-      - creative/open-design/ui-skills
-      - creative/open-design/ui-ux-pro-max
-      - creative/open-design/video-hyperframes
-      - creative/open-design/web-artifacts-builder
-      - creative/open-design/web-design-guidelines
-      - creative/p5js
-      - creative/pixel-art
-      - creative/popular-web-designs
-      - creative/pretext
-      - creative/sketch
-      - creative/songwriting-and-ai-music
-      - creative/taste-skill/brandkit
-      - creative/taste-skill/brutalist-skill
-      - creative/taste-skill/gpt-tasteskill
-      - creative/taste-skill/image-to-code-skill
-      - creative/taste-skill/imagegen-frontend-mobile
-      - creative/taste-skill/imagegen-frontend-web
-      - creative/taste-skill/minimalist-skill
-      - creative/taste-skill/output-skill
-      - creative/taste-skill/redesign-skill
-      - creative/taste-skill/soft-skill
-      - creative/taste-skill/stitch-skill
-      - creative/taste-skill/taste-skill
-      - creative/taste-skill/taste-skill-v1
-      - creative/touchdesigner-mcp
-      - data-science/jupyter-live-kernel
-      - devops/1panel-openresty-troubleshooting
-      - devops/agent-diagnostics
-      - devops/agent-self-maintenance
-      - devops/agent-skill-migration
-      - devops/cloakbrowser-web-scraping
-      - devops/cloudflare-dns
-      - devops/hermes-bootstrap
-      - devops/hermes-external-skill-install
-      - devops/kanban-orchestrator
-      - devops/kanban-worker
-      - devops/lab-server-deploy
-      - devops/mem0-memory-setup
-      - devops/playwright-browser-diagnostics
-      - devops/python-production-deployment
-      - devops/skill-publishing
-      - devops/webhook-subscriptions
-      - dogfood
-      - email/himalaya
-      - frontend/shadcn-magicui-development
-      - gaming/bci-game-development
-      - gaming/minecraft-modpack-server
-      - gaming/pokemon-player
-      - github/codebase-inspection
-      - github/github-auth
-      - github/github-code-review
-      - github/github-issues
-      - github/github-pr-workflow
-      - github/github-repo-management
-      - job-hunting-ai-agent
-      - mcp/native-mcp
-      - media/bilibili-video-summary
-      - media/gif-search
-      - media/heartmula
-      - media/html-video-rendering
-      - media/songsee
-      - media/spotify
-      - media/youtube-content
-      - messaging/hermes-napcat-qq
-      - mlops/evaluation/lm-evaluation-harness
-      - mlops/evaluation/weights-and-biases
-      - mlops/huggingface-hub
-      - mlops/inference/llama-cpp
-      - mlops/inference/obliteratus
-      - mlops/inference/outlines
-      - mlops/inference/vllm
-      - mlops/minimax-vision
-      - mlops/models/audiocraft
-      - mlops/models/segment-anything
-      - mlops/research/dspy
-      - mlops/tabular-emotion-classification-pipeline
-      - mlops/training/axolotl
-      - mlops/training/trl-fine-tuning
-      - mlops/training/unsloth
-      - napcat-hermes-setup
-      - note-taking/obsidian
-      - notionnext-blog
-      - openclaw-imports/aminer-data-search
-      - openclaw-imports/cli-anything
-      - openclaw-imports/docx
-      - openclaw-imports/dot-skill
-      - openclaw-imports/lark-approval
-      - openclaw-imports/lark-attendance
-      - openclaw-imports/lark-base
-      - openclaw-imports/lark-calendar
-      - openclaw-imports/lark-contact
-      - openclaw-imports/lark-doc
-      - openclaw-imports/lark-drive
-      - openclaw-imports/lark-event
-      - openclaw-imports/lark-im
-      - openclaw-imports/lark-mail
-      - openclaw-imports/lark-minutes
-      - openclaw-imports/lark-okr
-      - openclaw-imports/lark-openapi-explorer
-      - openclaw-imports/lark-shared
-      - openclaw-imports/lark-sheets
-      - openclaw-imports/lark-skill-maker
-      - openclaw-imports/lark-slides
-      - openclaw-imports/lark-task
-      - openclaw-imports/lark-vc
-      - openclaw-imports/lark-whiteboard
-      - openclaw-imports/lark-wiki
-      - openclaw-imports/lark-workflow-meeting-summary
-      - openclaw-imports/lark-workflow-standup-report
-      - openclaw-imports/nuwa-skill
-      - openclaw-imports/opencli-autofix
-      - openclaw-imports/opencli-browser
-      - openclaw-imports/opencli-explorer
-      - openclaw-imports/opencli-oneshot
-      - openclaw-imports/opencli-usage
-      - openclaw-imports/pdf
-      - openclaw-imports/self-distillation-pipeline
-      - openclaw-imports/smart-search
-      - openclaw-imports/xlsx
-      - openspec/openspec-apply-change
-      - openspec/openspec-archive-change
-      - openspec/openspec-explore
-      - openspec/openspec-propose
-      - priestess-a2a
-      - productivity/airtable
-      - productivity/bilibili-follow-extractor
-      - productivity/coursework-organization
-      - productivity/daily-digest-pipeline
-      - productivity/google-workspace
-      - productivity/linear
-      - productivity/maps
-      - productivity/nano-pdf
-      - productivity/notion
-      - productivity/notion-bill
-      - productivity/notion-cms-draft-evaluation
-      - productivity/notion-content-extraction
-      - productivity/notion-github-sync
-      - productivity/notionnext-content-sync-diagnostics
-      - productivity/ocr-and-documents
-      - productivity/powerpoint
-      - productivity/teams-meeting-pipeline
-      - productivity/visiky-resume-setup
-      - red-teaming/godmode
-      - reference/yubai-dramaflow
-      - research/arxiv
-      - research/blogwatcher
-      - research/llm-wiki
-      - research/polymarket
-      - research/research-paper-writing
-      - smart-home/openhue
-      - social-media/xurl
-      - software-development/alembic-async-fastapi-setup
-      - software-development/codebase-review
-      - software-development/debugging-hermes-tui-commands
-      - software-development/hermes-agent-skill-authoring
-      - software-development/hermes-dev-workflow
-      - software-development/hermes-s6-container-supervision
-      - software-development/ml-course-project-delivery-packaging
-      - software-development/ml-web-course-project-wsl
-      - software-development/node-inspect-debugger
-      - software-development/plan
-      - software-development/python-debugpy
-      - software-development/requesting-code-review
-      - software-development/simplify-code
-      - software-development/spec-kit-greenfield-init
-      - software-development/spike
-      - software-development/subagent-driven-development
-      - software-development/systematic-debugging
-      - software-development/test-driven-development
-      - software-development/vue3-feed-ui
-      - software-development/writing-plans
-      - superpowers/brainstorming
-      - superpowers/dispatching-parallel-agents
-      - superpowers/executing-plans
-      - superpowers/finishing-a-development-branch
-      - superpowers/receiving-code-review
-      - superpowers/using-git-worktrees
-      - superpowers/using-superpowers
-      - superpowers/verification-before-completion
-      - superpowers/writing-skills
-      - webdav-debugging
-      - yuanbao
 curator:
   enabled: true
   interval_hours: 168
@@ -775,13 +492,11 @@ curator:
   backup:
     enabled: true
     keep: 5
-honcho: {}
 timezone: ''
 slack:
   require_mention: true
   free_response_channels: ''
   allowed_channels: ''
-  channel_prompts: {}
 discord:
   require_mention: true
   free_response_channels: ''
@@ -791,7 +506,6 @@ discord:
   history_backfill: true
   history_backfill_limit: 50
   reactions: true
-  channel_prompts: {}
   dm_role_auth_guild: ''
   server_actions: ''
   allow_any_attachment: false
@@ -810,10 +524,8 @@ discord:
       - Checking on that now.
       - Give me a sec.
       - On it.
-whatsapp: {}
 telegram:
   reactions: false
-  channel_prompts: {}
   allowed_chats: ''
   extra:
     rich_messages: false
@@ -822,7 +534,6 @@ mattermost:
   require_mention: true
   free_response_channels: ''
   allowed_channels: ''
-  channel_prompts: {}
 matrix:
   require_mention: true
   free_response_rooms: ''
@@ -844,11 +555,7 @@ command_allowlist:
   - sudo with privilege flag (stdin/askpass/shell/list)
   - stop/restart system service
   - stop/restart hermes gateway (kills running agents)
-quick_commands: {}
-platform_hints: {}
-hooks: {}
 hooks_auto_accept: false
-personalities: {}
 security:
   allow_private_urls: false
   redact_secrets: true
@@ -871,7 +578,6 @@ cron:
     nas_jwks_url: ''
   wrap_response: true
   mirror_delivery: false
-  max_parallel_jobs: null
   output_retention: 50
 code_execution:
   mode: project
@@ -894,7 +600,6 @@ model_catalog:
   enabled: true
   url: https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
   ttl_hours: 1
-  providers: {}
 network:
   force_ipv4: false
 gateway:
@@ -937,7 +642,6 @@ lsp:
   wait_mode: document
   wait_timeout: 5.0
   install_strategy: auto
-  servers: {}
 x_search:
   model: grok-4.20-reasoning
   timeout_seconds: 180
@@ -958,7 +662,7 @@ computer_use:
   cua_telemetry: false
 _config_version: 30
 session_reset:
-  mode: both
+  mode: none
   idle_minutes: 1440
   at_hour: 4
 group_sessions_per_user: true
@@ -996,7 +700,11 @@ platform_toolsets:
     - tts
     - vision
     - web
-custom_providers: []
+custom_providers:
+  - name: opencode
+    provider: openai
+    base_url: https://opencode.ai/zen/v1
+    api_key: YOUR_API_KEY
 FEISHU_HOME_CHANNEL: YOUR_FEISHU_CHANNELcfb2
 mcp_servers:
   jobs:

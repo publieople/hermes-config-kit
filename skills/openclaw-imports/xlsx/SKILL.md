@@ -246,7 +246,7 @@ Quick checks to ensure formulas work correctly:
 
 ### Common Pitfalls
 - [ ] **NaN handling**: Check for null values with `pd.notna()`
-- [ ] **Far-right columns**: FY data often in columns 50+ 
+- [ ] **Far-right columns**: FY data often in columns 50+
 - [ ] **Multiple matches**: Search all occurrences, not just first
 - [ ] **Division by zero**: Check denominators before using `/` in formulas (#DIV/0!)
 - [ ] **Wrong references**: Verify all cell references point to intended cells (#REF!)
@@ -254,6 +254,42 @@ Quick checks to ensure formulas work correctly:
 - [ ] **Save failure → file corruption**: If `wb.save()` raises, the file is a partial zip. Always copy the original first. See `references/xlsx-corruption-recovery.md` for recovery.
 - [ ] **Pivot table creation**: openpyxl cannot create pivot tables. Use pandas `pivot_table()` + write to cells. See `references/pivot-table-workaround.md`.
 - [ ] **TableStyleInfo lost on re-save**: After modifying a file that already has a table, re-verify `table.tableStyleInfo` is set before final save — it can be silently dropped.
+- [ ] **`insert_rows` shifts template rows down**: Insert FIRST, then read template style from the new shifted row index (see below).
+- [ ] **Cell-level fill does NOT propagate vertically**: When inserting colored rows, each new cell's `fill` must be set explicitly via `template.fill.copy()`. Verify by reading back `cell.fill.start_color.rgb` for inserted rows.
+
+### `insert_rows` + copied styles pitfall (from real merge work)
+
+`ws.insert_rows(idx, amount=N)` pushes existing rows DOWN. If you save a "template" row reference BEFORE the insert and try to copy its style AFTER, the template has already moved. Correct order:
+
+```python
+# 1. Insert FIRST (push existing rows down)
+ws.insert_rows(idx, amount=N)
+
+# 2. Read template style from the NEW shifted position (idx + N)
+for off in range(N):
+    new_row = idx + off
+    template = ws.cell(row=idx + N, column=col)  # the OLD row idx is now here
+    for c in range(1, max_col + 1):
+        cell = ws.cell(row=new_row, column=c)
+        cell.fill = template.fill.copy()  # explicit copy — no vertical inheritance
+        cell.font = template.font.copy()
+        cell.border = template.border.copy()
+        cell.alignment = template.alignment.copy()
+
+# 3. Now write new data
+```
+
+If you write first and copy styles second, newly inserted rows inherit openpyxl defaults (often NO fill) — silently dropping the user's color coding on bulk inserts. **Always verify by reading back `cell.fill.start_color.rgb` for at least 3 inserted rows after the operation.**
+
+### Merged cells + `insert_rows`
+
+`insert_rows` does not always shift merged-cell ranges correctly across openpyxl versions. If the header has `merge_cells(start_row=1, start_column=1, end_row=1, end_column=N)`, inserting near the top may break or duplicate the merge. Workarounds:
+1. Unmerge before insert, then re-merge after.
+2. Or build new data into a fresh sheet, then move it.
+
+### `execute_code` sandbox state doesn't persist
+
+Each `execute_code` call runs a fresh Python process — `wb`, `ws`, intermediate variables all reset. For sequences of 5+ openpyxl operations with shared state, write a script to `/tmp/` with `write_file` and run via `terminal(command=…)`. Much faster than paging state through repeated execute_code calls.
 
 ### Formula Testing Strategy
 - [ ] **Start small**: Test formulas on 2-3 cells before applying broadly
@@ -294,7 +330,96 @@ The script returns JSON with error details:
 - For large files, read specific columns: `pd.read_excel('file.xlsx', usecols=['A', 'C', 'E'])`
 - Handle dates properly: `pd.read_excel('file.xlsx', parse_dates=['date_column'])`
 
+## 高考志愿填报表 (志愿表) — specific workflow
+
+This pattern recurs for users filling 高考志愿 (gaokao志愿) tables. The spreadsheet usually has columns:
+
+| A 志愿序号 | B 专业组代码 | C 院校名称 | D 专业代码 | E 专业名称 | F-K 分数/学费/学制/招生人数... |
+
+The "real" semantics of志愿填报 — and what the user means by "修正/合并单元格":
+
+- A **志愿位次** = one院校's one专业组. Each志愿 occupies 1..6 majors in the table, all sharing the same A/B/C values.
+- The "志愿序号" in column A is an integer 1..N counting志愿位次, NOT a string like "专业组1/2/3...". The original column-A "专业组X" labels are user-side shorthand and must be replaced by integer序号.
+- Adjacent rows with identical (B=专业组代码 AND C=院校名称) = same志愿位次 → must be merged into one group.
+- Each志愿位次 can have **at most 6 majors** (教育部规则, sometimes "最多4个" in older systems). Flag any group with >6 majors.
+- Always unmerge everything first, then re-merge from scratch using the scanned row ranges — don't trust existing merges.
+
+### Algorithm
+
+```python
+# 1. Backup the original FIRST (raw open() on /mnt/e/ — see NTFS pitfall below)
+with open(SRC, 'rb') as f: data = f.read()
+with open(BACKUP, 'wb') as f: f.write(data)
+
+# 2. Unmerge everything
+for mr in list(ws.merged_cells.ranges): ws.unmerge_cells(str(mr))
+
+# 3. Scan: group rows where A/B/C any-non-empty starts a new group, empty continues it
+groups = []
+current = None
+for r in range(data_start_row, max_row + 1):
+    a, b, c, d = [ws.cell(row=r, column=col).value for col in (1,2,3,4)]
+    if a is not None or b is not None or c is not None:
+        if current: groups.append(current)
+        current = {'row_start': r, 'code': b, 'school': c, 'majors': [(d, r)]}
+    else:
+        if current: current['majors'].append((d, r))
+if current: groups.append(current)
+
+# 4. Coalesce adjacent groups with identical (code, school) — that's the real志愿位次
+merged = []
+i = 0
+while i < len(groups):
+    g = groups[i]
+    g['row_end'] = g['majors'][-1][1]
+    j = i + 1
+    while j < len(groups):
+        if (groups[j]['code'] == g['code'] and groups[j]['school'] == g['school']
+                and groups[j]['row_start'] == g['row_end'] + 1):
+            g['majors'].extend(groups[j]['majors'])
+            g['row_end'] = groups[j]['majors'][-1][1]
+            j += 1
+        else: break
+    merged.append(g)
+    i = j
+
+# 5. Write志愿序号 (integer) to A column top-left, clear other rows, merge A/B/C
+for idx, g in enumerate(merged, 1):
+    ws.cell(row=g['row_start'], column=1, value=idx)
+    for r in range(g['row_start'] + 1, g['row_end'] + 1):
+        ws.cell(row=r, column=1).value = None
+    if g['row_end'] > g['row_start']:
+        ws.merge_cells(start_row=g['row_start'], start_column=1, end_row=g['row_end'], end_column=1)
+        ws.merge_cells(start_row=g['row_start'], start_column=2, end_row=g['row_end'], end_column=2)
+        ws.merge_cells(start_row=g['row_start'], start_column=3, end_row=g['row_end'], end_column=3)
+```
+
+### Pitfalls specific to志愿表 work
+
+- **"专业组X" 字符串 vs 整数志愿序号**: the original A column contains label strings like "专业组1/2/3..." which are NOT the志愿序号 — the志愿序号 is an integer that counts unique志愿位次. Always overwrite with integer.
+- **Different院校 can share the same "专业组X" label** (e.g. two different schools both with "专业组7"). Use B+C as the merge key, not the A label.
+- **Same院校同一个专业组代码 may appear non-contiguously** if the user re-ordered rows manually. Decide policy: merge only adjacent rows (most conservative, matches user's visible intent) vs merge all (more aggressive, may violate user's explicit ordering).
+- **Verify ≤6 majors per group** after scanning; flag violations before saving so the user can decide which to drop.
+
 ## Platform-Specific Pitfalls
+
+### Windows-NTFS-mounted `/mnt/e/` (or `/mnt/c/`) backups fail
+
+When the xlsx lives on a Windows drive mounted at `/mnt/e/...` (or similar) inside WSL, `shutil.copy2()` and `shutil.copy()` BOTH fail with `PermissionError: Operation not permitted` because they try to set utime/chmod which NTFS rejects for the WSL-mounted view.
+
+Workaround: read/write the bytes directly.
+
+```python
+# ❌ Both fail on /mnt/e/
+shutil.copy2(SRC, BACKUP)   # PermissionError on utime
+shutil.copy(SRC, BACKUP)    # PermissionError on chmod
+
+# ✅ Works on NTFS mounts
+with open(SRC, 'rb') as f: data = f.read()
+with open(BACKUP, 'wb') as f: f.write(data)
+```
+
+This also means `wb.save(path)` may fail if openpyxl tries to set file metadata — if so, save to `/tmp/` first then copy bytes.
 
 ### Python 3.14 + openpyxl: `Fill() takes no arguments`
 

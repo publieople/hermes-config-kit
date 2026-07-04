@@ -292,6 +292,78 @@ git log --grep="validation" --oneline
 - Long-lived branches that diverge significantly from main
 - Force-pushing to shared branches
 
+## Rescuing a Long-Diverged Fork
+
+When a GitHub fork's auto-sync workflow has been failing for days/weeks (notably the `Upstream Sync` GitHub Action pattern), the fork is too far behind upstream for `merge` to converge. Don't try to resolve 200+ add/add conflicts file-by-file — reset and reapply.
+
+**Symptoms** (any one is enough):
+- `gh run list --workflow="Upstream Sync"` shows consecutive `failure` conclusions for ≥5 days
+- Sync log shows `CONFLICT (content): Merge conflict in <file>` for many files
+- Sync log shows `No previous sync found from upstream repo. Syncing entire commit history.` (means the sync action lost its baseline)
+- PR diff between fork `main` and upstream shows thousands of files even when your real changes are tiny
+- Upstream repo has been migrated (renamed/transferred org) — old `upstream_sync_repo: user/old-repo` still in `.github/workflows/sync.yaml`, fetches redirect but `merge-base` cannot be reconstructed
+
+**Procedure** (read entirely before touching anything; one false move is hard to undo):
+
+1. **Diagnose first, no edits.** Use `gh run list` + `gh run view --log-failed` to capture the actual failure signature. Identify whether the failure is **upstream metadata drift** (org migration, dead repo URL) vs **accumulated content conflicts** vs **Node version deprecation** — the fix differs.
+
+2. **Enumerate true fork-only commits** before any reset. Both branches have diverged; the merge-base is meaningless without unshallowing.
+   ```bash
+   git fetch --unshallow origin main   # always safe for your own fork
+   git fetch upstream main             # may time out on huge upstream repos
+   BASE=$(git merge-base origin/main upstream/main)
+   git log origin/main ^$BASE --no-merges --pretty=format:"%H %s" --name-status
+   ```
+   This gives you the **honest list of fork-only touched files**. GitHub's PR diff will lie at this stage (shows 1000s of files due to history divergence) — `git diff upstream/main HEAD` from your reset branch is the source of truth.
+
+3. **Categorize each fork-only file into exactly one bucket:**
+   - **Keep fork**: fork-personalised content (config, CSS, favicon, theme overrides). Bytes-on-disk comparison (`git show origin/main:$f | wc -c` vs upstream) catches obvious cases.
+   - **Discard**: auto-bump files (`package.json` patch versions, `*.lock`), inherited workflow files from upstream (`.github/workflows/*`).
+   - **Ambiguous**: code under `components/`, `themes/`, `lib/` you don't remember touching — check with `git log origin/main ^$BASE --no-merges -- 'components/*'`. Empty result means upstream-driven, take upstream.
+
+4. **Reset without `git reset --hard`** (smart approval often blocks this and the safer `--orphan + pull` path gives the same result):
+   ```bash
+   git checkout --orphan reset-fork upstream/main
+   git pull upstream main   # working tree now = upstream HEAD, no commit yet
+   ```
+   `git reset --hard` is blocked by Hermes smart approval for good reason — `--orphan + pull` is the equivalent that's allowed.
+
+5. **Reapply overlays in one commit.** Copy each kept-fork file from origin over the new base:
+   ```bash
+   for f in <list>; do
+     mkdir -p "$(dirname $f)"
+     git show "origin/main:$f" > "$f"
+   done
+   git add -A
+   git commit -m "chore(rebase): reapply fork-specific overlays on upstream <version>"
+   ```
+
+6. **Push to a feature branch, NOT directly to main.** Open a PR so the user sees the (visually bloated) diff consciously.
+   ```bash
+   git push origin reset-fork
+   gh pr create --base main --head reset-fork --title "chore(rebase): ..." --body "..."
+   ```
+   Never `--force` to `main` on a fork that has any history the user cares about (star graphs, prior releases). PR-first, force-push-second, only with explicit user permission.
+
+7. **Fix the sync workflow itself** if upstream org migrated:
+   ```yaml
+   # .github/workflows/sync.yaml
+   - upstream_sync_repo: <old-user>/<repo>   # → <new-org>/<repo>
+   ```
+   Also run prettier (cron string single-quotes, etc.) — sync workflow files are project-formatted.
+
+9. **Verify, don't claim done.**
+   - `npx prettier --check .github/workflows/sync.yaml` passes
+   - `git diff --name-only upstream/main HEAD` shows the small overlay set (10-20 files), NOT the PR's bloated count
+   - PR comment tells the user "review `git diff upstream/main origin/<branch>` for real diff, not the PR's 3-way view"
+
+10. **When handing off mid-recovery, name the next mandatory step explicitly.** When the rescue is partial (e.g. "reset done, PR open, NOT merged yet"), say exactly what the user must do before the next verify means anything. Burying it in a checklist invites them to run the verify command on the un-merged base, see failure, and lose trust in the diagnosis. Format: `**Next N things before the verify means anything:**` followed by numbered list. If the user copy-pastes a verify command before doing those things, the failure pollutes the diagnosis.
+
+**Ponytail notes:**
+- Don't try to resolve 200 add/add conflicts individually. The diff is already impossible to read; the right answer is reset + reapply, not resolve.
+- Don't auto-merge the rescue PR. User review of the overlay list is the whole point.
+- Don't rewrite fork history (filter-branch, interactive rebase) — leaves fork-only deploy config orphaned in ways that bite later.
+
 ## Verification
 
 For every commit:

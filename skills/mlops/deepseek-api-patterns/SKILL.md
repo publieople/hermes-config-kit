@@ -61,6 +61,12 @@ Thought → Action → Action Input → PAUSE → [代码执行工具] → Obser
 
 DeepSeek 完全兼容 OpenAI 的 function calling 格式。标准模式无需特殊处理。
 
+## Provider Selection & Pricing
+
+DeepSeek introduced peak/off-peak pricing for V4正式版 (mid-July 2026): 2x during 9-12 and 14-18 Beijing time. 硅基流动 offers same models at flat pricing (no peak surcharge), OpenAI-compatible API. See `references/provider-pricing.md` for current comparison.
+
+**Pitfall**: web_search/web_extract often return stale pricing. Use browser tools to check actual provider pricing pages.
+
 ## 代理配置
 
 使用 Clash 代理时，设置环境变量：
