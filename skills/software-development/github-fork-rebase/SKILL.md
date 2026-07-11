@@ -2,10 +2,12 @@
 name: github-fork-rebase
 description: >-
   Maintain a GitHub fork of an active upstream open-source project — diagnose sync
-  failures, recover from long-term divergence, preserve local personalisation
-  (config files, themes, assets), and re-arm auto-sync. Covers NotionNext,
-  Next.js starters, Astro themes, Vercel templates, and any fork that upstream
-  ships updates you want while keeping your overlay.
+  failures, recover from long-term divergence, preserve local personalisation (config
+  files, themes, assets), and re-arm auto-sync. Covers NotionNext, Next.js starters,
+  Astro themes, Vercel templates, plugin frameworks (AstrBot, etc.) and any fork that
+  upstream ships updates you want while keeping your overlay. Also covers the
+  **first-time fork + local personalise** flow when the user wants a personal fork
+  they intend to push commits to, not just sync with upstream.
 ---
 
 # GitHub Fork Rebase & Long-Term Sync Recovery
@@ -15,9 +17,14 @@ has been left alone for weeks/months and the daily `Upstream Sync` workflow
 starts failing — recover the fork, preserve the user's overlay, and re-arm
 auto-sync.
 
+**See also**: [references/astrbot-plugin-fork.md](references/astrbot-plugin-fork.md)
+for AstrBot plugin fork specifics (decorators, schema, load verification).
+
 ## Trigger conditions
 
 - User says "sync 失败", "fork 跟不上了", "auto-sync 一直报错"
+- User says "fork 一下", "在 GitHub 上开一个", "做个 fork 版" → first-time
+  fork + personalise flow (see end of file)
 - `gh run list --workflow="Upstream Sync"` shows 5+ consecutive `failure` runs
 - Latest run log shows: `fatal: error processing shallow info`, `CONFLICT in
   package.json|blog.config.js|favicon.ico`, or `[Error] 由于上游仓库的 workflow
@@ -196,13 +203,116 @@ If the next-step command looks like something the user can paste and you'll
 both discover the bug only when it returns wrong, add a one-line
 precondition above it.
 
-## Known upstream migrations
+## First-time fork + local personalise (push-bound workflow)
 
-Update this list when you encounter more:
+When the user wants a personal fork they'll commit to — not just sync with
+upstream — the workflow is different. Trigger phrases: "fork 一下", "我也要
+这个", "在你 GitHub 上开一个", "做个 fork 版", or any time the user explicitly
+asks you to fork an upstream repo and push your own changes to the fork.
 
-| Project | Old | New | When |
-|---|---|---|---|
-| NotionNext | `tangly1024/NotionNext` | `notionnext-org/NotionNext` | 2026 (org transfer) |
+### Step 1 — fork and clone to local
+
+```bash
+# fork on GitHub (no clone yet)
+gh repo fork <upstream-owner>/<repo> --clone=false
+
+# clone the fork locally to the target dir
+gh repo clone <your-name>/<repo> <local-target-dir>
+```
+
+`gh fork` automatically configures the `upstream` remote to point at the
+original. Verify with `git remote -v` — you should see both `origin` (your
+fork) and `upstream` (original).
+
+### Step 2 — make the changes, version-bump in metadata
+
+This is the asymmetric part vs the sync-recovery flow above. For plugin
+frameworks and package-style repos, version + author metadata is the
+single source of truth. Rules:
+
+- **Bump version** in every metadata file (`metadata.yaml`, package.json
+  `version`, `pyproject.toml` `version`, plugin manifest). Convention: minor
+  bump for additive changes, patch for fixes.
+- **Preserve original author credit**. Pattern: `author: OriginalAuthor /
+  <your-name>`. Never replace the upstream author. This is the polite default
+  for personal forks of small plugins.
+- **If a `_conf_schema.json` exists, fill in the `default` for every field**
+  you add, otherwise the host platform can't initialise the config on first
+  load. Empty `default: ""` for strings, `[]` for lists, `0` for ints.
+- **If the plugin writes cache to disk, add a `.gitignore` entry** for the
+  cache dir (e.g. `imgs/`, `__pycache__/`) before the first commit so you
+  don't accidentally push runtime artefacts.
+
+### Step 3 — commit with a clean message, push to fork only
+
+```bash
+git add -A
+git -c user.email=<you> -c user.name=<you> commit -F /tmp/commit_msg.txt
+git push origin main
+```
+
+- `git -c user.email=... -c user.name=...` works around the case where the
+  local git config is missing or wrong; safer than `git config --global` for
+  a one-off push.
+- **Do NOT `git push upstream`** — the upstream remote is read-only by
+  convention. Pushing to it almost never works anyway (you don't have
+  write access), but never try.
+- If a `__pycache__/`, `.pyc`, or runtime cache directory slipped into the
+  commit, fix it in a follow-up commit (`chore: ignore <dir>/` + add to
+  .gitignore) — don't amend the personalisation commit.
+
+### Step 4 — verify before declaring done
+
+```bash
+# 1. Remote state matches local
+git fetch origin && git status
+
+# 2. No stray __pycache__/ or runtime artefacts tracked
+git ls-files | grep -E '\.pyc$|__pycache__$|imgs/$'  # should be empty
+
+# 3. If this is a plugin being installed/loaded, check the load log for
+#    "Loading plugin <name>..." and "Added llm tool: <tool_name>" lines.
+#    See references/astrbot-plugin-fork.md for the AstrBot-specific path.
+```
+
+### Pitfalls
+
+#### F1. Don't fork to the same name as the upstream if you can avoid it
+
+The user can still install by URL, but keeping the original name
+(`astrbot_plugin_Pic` vs a custom `astrbot_plugin_Pic_myfork`) makes it
+impossible to disambiguate upstream from fork in the wild. If the user's
+intent is to ship a meaningful fork, pick a clear name suffix.
+
+#### F2. Don't bypass upstream with `--orphan` on a first-time personalise
+
+The orphan-reset flow above is for **sync recovery**, where the fork's
+history is the problem. For a first-time fork the original history is
+fine — you want the upstream lineage preserved so the relationship is
+visible in commit history.
+
+#### F3. Check for required tools before the first commit
+
+Plugin frameworks often need `ruff`, `pyright`, or specific formatters
+for pre-commit. If the project's README says "use ruff", run it
+**before** the first commit, not after — fixing formatter complaints in
+a follow-up commit is messy.
+
+#### F4. Don't fork for things that should be PRs upstream
+
+If the user wants a small fix to upstream, fork → clone → edit → push →
+**open a PR to upstream**, not a personal fork. Personal forks are for
+personalisation overlays; PRs are for upstream contributions. Default
+heuristic: if the user said "fix" or "patch" rather than "fork" or "my
+own version", open a PR.
+
+#### F5. Bash heredocs with Chinese commit messages break shell parsing
+
+If the commit message is multi-line and contains Chinese / accents,
+write it to `/tmp/commit_msg.txt` first and use `git commit -F`. Inline
+`-m "..."` will fail with `unterminated string literal` or `unexpected
+EOF` depending on quote escaping. This is the sandbox interpreter, not
+git.
 
 ## Verification
 
@@ -226,3 +336,11 @@ gh api repos/<owner>/<fork>/deployments --jq \
 
 If §3 SHA ≠ §2 SHA, the host dropped the webhook — push an empty commit to
 re-arm (see Pitfall §6).
+
+## Known upstream migrations
+
+Update this list when you encounter more:
+
+| Project | Old | New | When |
+|---|---|---|---|
+| NotionNext | `tangly1024/NotionNext` | `notionnext-org/NotionNext` | 2026 (org transfer) |

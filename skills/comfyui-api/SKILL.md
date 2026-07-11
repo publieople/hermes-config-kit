@@ -87,7 +87,21 @@ python3 /data/comfy/comfy_api.py list-models        # 模型列表
 - **历史记录**: `curl http://localhost:8188/history/{prompt_id}`
 - **所有历史**: `curl http://localhost:8188/history`
 
-### 5. Wan2.2 模型架构关键理解
+### Anima 模型 + AstrBot promax 集成 pitfall(2026-07-08 root-caused)
+
+AstrBot `astrbot_plugin_ComfyUI_promax` 的 `comfyui_txt2img` 路径(LLM tool 调)原本走 `_build_comfyui_prompt` 标准 T2I 路径,用 `CheckpointLoaderSimple` 直接加载 Anima ckpt。**Anima 不内嵌 CLIP/VAE**,这条路径会立即报 `clip input is invalid: None`。
+
+**修法**: `comfyui_txt2img` 必须先检测 `eng.workflow_prefixes["anima"]`,有就走 `anima_t2i` workflow(`anima_t2i.json`),由 workflow 自带的独立 `CLIPLoader(qwen_3_06b_base.safetensors, type=stable_diffusion) + VAELoader + CheckpointLoaderSimple` 三节点解决;无 anima workflow 才回落到标准路径(只对内嵌 CLIP 的 SD/SDXL ckpt 工作)。
+
+**坑 — 容易改错的地方**:
+- 把 CLIPLoader 的 `type` 从 `stable_diffusion` 改成 `qwen_image` 看似更"准确",**但 8 次跑成功已验证 stable_diffusion 工作**——Anima ckpt 内部 checkpoint loader 会覆盖 type 字段,改 type 反而有引入新 bug 的风险
+- promax schema 标 `enable_translation: "已弃用"`,但代码里 `_translate_cn_prompt` 仍自动调,LLM 翻译失败 fallback 原文 → 中文 prompt 进 Qwen3 出乱码。**不要靠 promax 翻译,LLM tool 路径直接传英文 Danbooru 标签**
+
+`/home/po/astrbot/data/plugins/astrbot_plugin_ComfyUI_promax/workflow/anima_t2i.json` 的 node 11 硬编码 `"best quality, score_7, ..."` 仍是 workflow 兜底 starter,LLM tool 路径会覆盖它。
+
+→ AstrBot 端 LLM 调 tool 失败的更多 pitfall 见 [astrbot-operations](../../astrbot-operations/SKILL.md) 的"LLM/Provider 端故障排查"段。
+
+## Wan2.2 模型架构关键理解
 Wan2.2 系列使用**双模型级联**架构（高噪 + 低噪），不同任务共享同一组模型：
 
 | 任务 | 使用的模型 | 区别节点 | 有无独立 checkpoint |
@@ -146,6 +160,7 @@ ffprobe -v quiet -show_streams output.mp4 | grep -E "codec_name|width|height|dur
 - `hunyuan_3d_v2.1.safetensors` — 3D生成
 - `ltx-2-19b-dev-fp8.safetensors` / `ltx-2-19b-distilled.safetensors`
 - `miaomiao-harem.safetensors` — **SDXL Illustrious 动漫模型** (6.5GB, Civitai ⭐⭐⭐⭐⭐)。通过 `CheckpointLoaderSimple` 加载（自带 CLIP/VAE），**不需要额外 SDXL CLIP 模型**。已验证 1024×1024 完整生成 ✅。参数：30步, cfg=4, euler, scheduler=normal。路线评估参考 `ai-drama-pipeline-route-planning` skill
+- `Anima/miaomiaoHarem_anima14.safetensors` — **Anima 动漫模型** (4GB, 2B 参数, flow matching 架构)。**不自带 CLIP/VAE**，需三个独立节点加载：CLIPLoader(`qwen_3_06b_base.safetensors`, type=stable_diffusion) + VAELoader(`ae.safetensors`) + CheckpointLoaderSimple(只加载扩散模型部分)。Qwen 0.6B 文本编码器**不支持中文 prompt**，中文会生成随机动漫少女而非预期内容。必须用英文 Danbooru 标签格式写 prompt（如 `1girl, cat ears, smoking`）。已给 AstrBot ComfyUI promax 插件 `handle_workflow` 加 `_translate_cn_prompt` 方法（通过 `self.context.get_using_provider().text_chat()` 调 DeepSeek 翻译），含 CJK 检测 + try/except fallback。参数：32步, cfg=4, euler_ancestral, scheduler=simple。
 - `WAN/wan2.2-rapid-mega-aio-v1.safetensors` — **Wan2.2 Rapid All-in-One** (24.3GB, 放在 `checkpoints/WAN/` 子目录内，使用 `CheckpointLoaderSimple` 加载)。单文件合并了 WAN 2.2 + CLIP + VAE + 加速器，无需分开加载多个模型。
 
 ### Text Encoders

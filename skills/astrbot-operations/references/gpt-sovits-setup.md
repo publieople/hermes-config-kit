@@ -36,6 +36,40 @@ docker run -d --name gpt-sovits --gpus all \
 
 7. **使用 compose 的注意事项**：官方 docker-compose.yaml 定义了多个 service，`docker compose up` 会校验全部 service 的 volume 是否存在。Lite 版多了 ASR/UVR5 目录挂载，如果没有对应目录会报错。建议直接用 `docker run`。
 
+## 容器恢复与开机自启
+
+容器创建后若停止（如宿主机重启后），无需重新创建：
+
+```bash
+docker start gpt-sovits
+```
+
+**推荐设置自动启动策略**：
+```bash
+docker update --restart unless-stopped gpt-sovits
+```
+这样宿主机重启后 Docker 自动拉起容器。`unless-stopped` 策略在容器被显式 `docker stop` 时不会自动重启，符合运维直觉。
+
+## 诊断
+
+### TTS 连接失败
+
+错误: `Cannot connect to host 127.0.0.1:9880 ssl:default [Connect call failed]`
+
+```bash
+# 1. 检查容器是否存在
+docker ps -a --filter "name=gpt-sovits"
+
+# 2. 容器存在但 Exited → 启动
+docker start gpt-sovits
+
+# 3. 容器不存在 → 重新创建（见快速启动步骤）
+# 4. 确认监听
+sleep 3 && curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:9880/tts?text=你好&text_lang=zh"
+```
+
+> 如果容器已经创建过但显示 Exited，**不要重新 `docker run`**（会冲突），直接 `docker start`。
+
 ## 测试
 
 ```bash

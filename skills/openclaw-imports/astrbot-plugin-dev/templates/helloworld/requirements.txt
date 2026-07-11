@@ -1,0 +1,3 @@
+# AstrBot 通常自带: aiohttp, httpx
+# 仅当需要额外依赖时列出
+aiofiles>=23.0.0

@@ -1,0 +1,23 @@
+{
+  "some_option": {
+    "type": "string",
+    "description": "示例配置",
+    "hint": "tooltip 文字",
+    "default": "default value"
+  },
+  "max_retries": {
+    "type": "int",
+    "description": "重试次数",
+    "default": 2
+  },
+  "trigger_words": {
+    "type": "string",
+    "description": "关键词触发列表(逗号分隔)",
+    "default": "我要看图"
+  },
+  "enable_feature": {
+    "type": "bool",
+    "description": "功能开关",
+    "default": true
+  }
+}

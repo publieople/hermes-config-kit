@@ -137,6 +137,8 @@ EOF
 
 **Do NOT clean up worktree** — user needs it alive to iterate on PR feedback.
 
+**After pushing additional commits to an existing PR branch:** the PR title and body do NOT auto-update. Run `gh pr edit <number> --title "..." --body "..."` to sync the PR description with the expanded scope. Forgetting this is the most common post-push miss — the diff is right but the PR still sells only the original change.
+
 #### Option 3: Keep As-Is
 
 Report: "Keeping branch <name>. Worktree preserved at <path>."

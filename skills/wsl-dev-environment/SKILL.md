@@ -15,6 +15,57 @@ WSL (Windows Subsystem for Linux) 上的开发环境配置与常见陷阱。
 - 在 WSL 中需要访问 Windows 侧的代理（Clash）
 - NTFS 挂载盘上的文件权限/解压问题
 - DeepSeek ReAct Agent 在 WSL 环境下的运行
+- 通过 SSH 操作远端 fish shell 服务器时遇到 `fish: $? is not the exit status`
+- 在 WSL 内运行 tmux / 任何常驻进程，需要"清干净"做验证
+
+## SSH 到 fish shell 远端服务器 — `$?` 必踩的坑
+
+远端用户登录 shell 是 fish 时，inline 单引号命令里写 `$?` 会被 fish 拦截：
+
+```
+fish: $? is not the exit status. In fish, please use $status.
+```
+
+原因：ssh 把整个 `command` 作为 argv 传给远端登录 shell，fish 看到 `$?` 字面量就直接报错。命令根本没跑。
+
+**绕过（任选一）：**
+
+```sh
+# 1. 强制远端用 bash 而不是登录 shell
+ssh user@host bash -c '...your code with $?...'
+
+# 2. heredoc 强制走 /bin/sh
+ssh user@host /bin/sh <<'EOF'
+...your code with $?...
+EOF
+```
+
+判断：远端命令 exit 127 + stderr 含 `fish: $? is not the exit status` = 几乎一定是这个问题，不是命令本身语法错。
+
+## tmux / 长驻进程：永远别 `kill-server` 验证
+
+Hermes TUI 本身就跑在 WSL tmux 里。配置改动后想"清干净再加载"时：
+
+```sh
+# ❌ 错 — 杀掉整个 tmux server，Hermes 进程跟着死
+tmux kill-server
+tmux new-session -d -s _v fish -l
+tmux source-file ~/.tmux.conf
+```
+
+后果：本会话直接断，Hermes 状态丢失，下一次用户在另一个 shell 继续。
+
+```sh
+# ✅ 对 — 在当前 server 上起一个命名临时 session 验证，再 kill 那个 session
+tmux new-session -d -s _vverify fish -l
+tmux source-file ~/.tmux.conf
+tmux display-message -p "prefix=[#{prefix}] mouse=[#{mouse}] shell=[#{default-shell}]"
+tmux kill-session -t _vverify
+```
+
+或者用独立 socket 完全隔离：`tmux -L _test new-session -d ...` + `tmux -L _test kill-server`，这只杀那个 socket 下的 server，不动默认。
+
+如果想检查 `$?` 又在 fish 环境：用 `tmux display-message -p` 把检查嵌进 tmux 内部，fish 看不到 `$?` 就不会爆。
 
 ## NTFS 挂载盘上的 venv 权限问题
 

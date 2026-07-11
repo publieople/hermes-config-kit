@@ -113,6 +113,45 @@ write_file("/path/to/file", clean)
 
 **识别方法：** 如果 patch 返回的 diff 中包含 `\\n` 字面量（而不是真正的换行），说明发生了转义漂移，文件已损坏。立即 `git checkout -- <file>` 恢复并用上述替代方案重做。
 
+## 核心坑 2.5：patch 工具的多行嵌套重复 (multi-line nesting bug)
+
+当 `old_string` 跨多行时（典型场景：被替换的代码本身就是 `func_call(\n  arg1\n)` 这种多行调用），patch 工具的字符串拼接逻辑有时会产出**结构合法的嵌套重复**：
+
+期望：
+```python
+lines.append(f"item {idx}")
+```
+
+实际写出来：
+```python
+lines.append(
+    lines.append(f"item {idx}")
+)
+```
+
+`old_string` 包含了 `lines.append(\n` 这种换行尾的片段，工具在拼接时把 `new_string` 的开头几行当成新内容保留，旧的结尾几行（包括 `lines.append(`）也保留下来——结果是 `lines.append(\n new\n) ` 套在原始 `lines.append(...)\n)` 上。
+
+**症状：**
+- 文件 syntax 合法（不会立刻报错），但 linter/mypy 会抓出奇怪的"argument of type None"或"too many positional arguments"
+- 看代码像多套了一层函数包装
+- patch 返回的 diff 看起来"对"——但实际文件不对
+
+**触发条件：**
+- `old_string` 跨度 ≥ 3 行
+- `old_string` 末尾包含半开的括号/方括号（`[`, `(`, `{`），没匹配闭合
+- 替换行本身也是多行表达式
+
+**识别方法：** patch 后立刻 read_file 看一下原被替换位置，**不要相信 diff 显示的"匹配了多少行"**。diff 是从 old_string 到 new_string 的字面变化，**它不会告诉你 new_string 跟上下文合起来有没有重复嵌套**。
+
+**解决方案：** patch 后**必须立刻 read_file 检查整段被替换位置的上下文**，确认结构没多套：
+
+```bash
+# 用 terminal + sed 看包含被替换段的几行
+grep -n -B 2 -A 4 '可疑的标识符' file.py
+```
+
+如果发现嵌套，直接 `git checkout -- <file>` 恢复再换写法（`write_file` 整文件重写最稳）。
+
 ## 核心坑 3：npm uninstall 的级联删除
 
 `npm uninstall <pkg>` 可能移除该包的传递依赖，导致其他包也被删除。例：`npm uninstall @iarna/toml` 移除了 95 个包，包括 `@vitejs/plugin-react`，导致 vitest 和 vite build 全部崩溃。

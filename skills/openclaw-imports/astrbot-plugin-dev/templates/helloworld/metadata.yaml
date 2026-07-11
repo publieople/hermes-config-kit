@@ -1,0 +1,10 @@
+name: astrbot_plugin_xxx
+display_name: 展示名
+desc: 一句话描述
+version: v1.0.0
+author: YourName
+repo: https://github.com/you/repo
+# 可选:
+# short_desc: 卡片短描述
+# support_platforms: [aiocqhttp, telegram, ...]
+# astrbot_version: ">=4.16,<5"

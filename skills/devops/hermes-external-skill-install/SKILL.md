@@ -366,6 +366,32 @@ Record the installation facts so future sessions know what's available.
 
 ---
 
+## 快速判断:这是"装 skill 的 skill"问题吗?
+
+当用户问"有没有 X 市场的 skill" / "skill 市场" / "skill 商店"时,先查本 skill 是否覆盖 — 大概率就是这一个。常见来源对照:
+
+| 用户说的 | 真实定位 | 装/查方式 |
+|---------|---------|----------|
+| "Hermes skill 市场" / "https://hermes-agent.nousresearch.com/docs/zh-Hans/skills" | 本 skill 直接覆盖(12 个注册源、agentskills.io 索引) | `npx skills add <owner/repo>` 或 git clone |
+| "AstrBot 插件市场" | **不是本 skill** — 走 `_archive/skill-finder-cn` 或 AstrBot 原生 plugin marketplace | 别误推荐本 skill |
+| "Claude Code / OpenCode / Cursor skills" | 同源,SKILL.md 格式通用,本 skill Case A 可装 | 直接装 |
+| "Hermes 文档" (查/读) | **不需要 skill** — `hermes-agent` umbrella + `web_extract` / `browser_*` 已经是答案 | 别造新 skill |
+
+**坑**: `_archive/skill-finder-cn` 只覆盖 AstrBot 插件市场。看到"skill 市场"先想本 skill,别跳到 skill-finder-cn。
+
+## 查 Hermes 文档的快捷方式
+
+不需要额外 skill。`hermes-agent` umbrella + `web_extract` 已覆盖。`.md` 后缀 URL 走 `web_extract` 极快:
+
+```bash
+# 文档页通常是 HTML,但 raw .md 走 raw.githubusercontent.com / 静态 .md 端点
+web_extract urls=["https://hermes-agent.nousresearch.com/docs/zh-Hans/skills"]
+# 或 curl 拿 markdown
+curl -s https://hermes-agent.nousresearch.com/docs/zh-Hans/<slug>.md
+```
+
+JS 重度页(Skills Hub 目录页)用 `browser_console` + `document.body.innerText.slice(0, N)` 拿分类目录,别死等 `browser_snapshot` 超时(30s 必挂)。
+
 ## 已知问题 (All Cases)
 
 ### 1. npx skills add 格式兼容性
