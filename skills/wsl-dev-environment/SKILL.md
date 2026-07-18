@@ -1,8 +1,8 @@
 ---
 name: wsl-dev-environment
-description: WSL 开发环境配置 — NTFS venv 权限、Clash 代理访问、DeepSeek ReAct 模式、PaddlePaddle 安装
+description: WSL 开发环境配置 — NTFS venv 权限、Clash 代理访问、DeepSeek ReAct 模式、PaddlePaddle 安装、>60s 长任务的 Hermes sandbox 限制、GitHub release 大文件下载
 category: devops
-tags: [wsl, venv, proxy, deepseek, react-agent]
+tags: [wsl, venv, proxy, deepseek, react-agent, long-running, github-release]
 ---
 
 # WSL 开发环境
@@ -17,6 +17,11 @@ WSL (Windows Subsystem for Linux) 上的开发环境配置与常见陷阱。
 - DeepSeek ReAct Agent 在 WSL 环境下的运行
 - 通过 SSH 操作远端 fish shell 服务器时遇到 `fish: $? is not the exit status`
 - 在 WSL 内运行 tmux / 任何常驻进程，需要"清干净"做验证
+- 从 Windows PowerShell 一行启动 WSL 里安装的 CLI（hermes / claude / codex 等），报"未找到命令"、"no API keys"、或"先进入 fish / 卡在 PS1 才执行命令"
+- 在 WSL 里跑 > 60s 的 JVM / 构建任务，`terminal(background=true)` 起来后秒退
+- 从 GitHub release 下载 > 50MB 资产，速度极慢且续传无效
+- 在 WSL 里 `cp` 大文件 / 多文件目录到 `/mnt/c/` `/mnt/e/` 等 Windows NTFS 挂载盘，写入静默失败（目标文件不存在 / size 截断 / cp 进程 exit 0 但目标没生成）
+- 后台进程完成通知里看到 `bash: 无法设定终端进程组 (-1): 对设备不适当的 ioctl 操作` + `此 shell 中无任务控制` → 误以为是失败
 
 ## SSH 到 fish shell 远端服务器 — `$?` 必踩的坑
 
@@ -204,6 +209,34 @@ npx vite --host 0.0.0.0
 2. 确认无语法错误后再后台启动：`terminal(background=true)`
 3. 检查端口：`ss -tlnp | grep <port>`
 
+### Hermes 长时任务被 sandbox 杀的硬性上限（实测 ~60-90s）
+
+**症状**：`terminal(background=true)` 起的进程在 60-90 秒后**无任何报错地消失**（exit_code=0，但 log 不更新，PID 查不到）。实测：SPC 8.1.2 生成整合包 5 分钟全过程跑得通，但 `terminal(background=true, timeout=1500)` 起来的实例 uptime 只有 69s 就被砍。
+
+**根因**：Hermes TUI 给后台进程附加了 sandbox 监管（看 stderr 的 `bash: 无法设定终端进程组 (-1): 对设备不适当的 ioctl 操作` + `此 shell 中无任务控制` 这两行警告），超时后 SIGTERM。
+
+> ⚠️ **关于那两行 ioctl 警告的"误报"**：Hermes 后台进程**完成通知**里也总是带这两行（`bash: 无法设定终端进程组 (-1)` + `此 shell 中无任务控制`），即使命令真的成功跑完了。看到这两行**不等于失败**——判断成功与否要看 exit_code 和实际产出物（文件、port、log）。这条不是新坑，是 Hermes 的固定行为。
+
+**结论**：
+
+- **短任务（< 60s）** → 后台方便，配合 `process action=poll` 看进度
+- **长任务（> 60s）** → **必须前台** + 留 timeout 余量。`timeout 580 java -jar ...` 实测可用，600s 是 Hermes fg 命令上限
+- **超长任务（> 10 分钟）** → 用 `delegate_task`（会自动后台），或 `cronjob`（deliver='local' 不会发回 TUI，但任务真跑完）
+
+**反模式**：
+```bash
+# ❌ 看似后台、实际被砍
+terminal(background=true, timeout=1800) java -jar foo.jar > log 2>&1
+# uptime 69s 后 PID 不在了，log mtime 卡在 60s 处
+```
+
+**正确做法**：
+```bash
+# ✅ 前台跑 + 留余量
+timeout 580 java -jar foo.jar > log 2>&1
+# 或直接放后台用 nohup + setsid 完全脱钩（绕过 Hermes）
+```
+
 ## ModelScope 下载
 
 ModelScope（`modelscope.cn`）下载模型不需代理，且比 HuggingFace 更稳定（国内 CDN）。
@@ -372,6 +405,120 @@ if __name__ == "__main__":
 
 另外 uvicorn lifespan 有 5 秒默认超时，模型加载（~35s）不能放在 lifespan startup 中。
 
+## PowerShell 一行启动 WSL 里安装的 CLI（hermes / claude / codex …）
+
+Windows 终端里想直接敲 `hermes` / `claude` / `codex` 调 WSL 里的 CLI（典型场景：WSL 配好了全套 env 和 venv，但人在 PowerShell 里），`wsl <cmd>` 这种直觉写法一连踩三个坑：
+
+### 坑 1：`wsl <cmd>` 找不到命令 — wsl 默认 PATH 不带 `~/.local/bin`
+
+`wsl -e bash -lc "hermes"` 启动的 shell 只继承 WSL 默认用户的 PATH（`/usr/bin` 等），不读 `.bashrc` 里的 `export PATH` 也不读 `~/.local/bin/env`。hermes / claude / codex 全装在 `~/.local/bin/`，直接报 `未找到命令`。
+
+**绕过**：直接走绝对路径，不依赖 PATH 解析：
+
+```powershell
+# ❌ 错
+wsl hermes
+wsl -e bash -lc "hermes"
+
+# ✅ 对 — 直接调 venv 里的 entry point
+wsl -e bash -lc "/home/po/.hermes/hermes-agent/venv/bin/hermes"
+```
+
+### 坑 2：`wsl -e bash -lc "~/..."` 中 `~` 解析成 `/root` — wsl 默认登录用户是 root
+
+`wsl -e` 不带 `-u` 时用 `/etc/wsl.conf` 的 `default` 用户（默认 root）。`~` 在 bash -lc 字符串里被 root 用户解析成 `/root`，不是 `/home/po`，于是报 `/root/.local/bin/hermes: 没有那个文件或目录`。
+
+**绕过**：绝对路径写死，或用 `-u po` 切用户（但切用户会丢 root 那边的 env，见坑 3）。
+
+### 坑 3：切到 `-u po` 后丢失 API key / proxy / 各种 env
+
+hermes / claude 这类工具要读一堆 env（`DEEPSEEK_API_KEY`、`BAILIAN_API_KEY`、`HTTPS_PROXY`、`NAPCAT_TOKEN`、`PYTHONPATH`…）。WSL 默认 root 登录 shell 里这些 env 是齐的（写在 `/etc/profile.d/` 或 root 的 `.bashrc`）。切到 `-u po` 后 po 的 shell 没这些 export，工具启动报"no API keys or providers found"。
+
+**最干净的解法**：保持默认用户 root + 绝对路径调 po 的 venv，root 的 env 全在，po 的库全在：
+
+```powershell
+# PowerShell $PROFILE 里加：
+function hermes { wsl -e bash -lc "/home/po/.hermes/hermes-agent/venv/bin/hermes $($args -join ' ')" }
+```
+
+变体：
+- claude code：`/home/po/.local/bin/claude`（如果装在 `~/.local/bin` 而非 venv）
+- codex：`/home/po/.npm-global/bin/codex`
+
+**验证链路是否通**：
+
+```powershell
+wsl -e bash -lc '/home/po/.hermes/hermes-agent/venv/bin/hermes --version'
+# 应输出 Hermes Agent v... 不报 file not found
+```
+
+不输出 version = 路径错了；version 出来了但还是 "no providers" = 坑 3，切用户了。
+
+### 坑 4：`wsl -e bash -lc "..."` 先进 fish 后才执行 hermes — `-l` + TTY 让 bash 卡在登录 shell 交互模式
+
+**症状**：用户报"PowerShell 函数执行时先进入 WSL 的 fish / 显示 welcome banner，等我退出后再进 hermes"。
+
+**原因**：`wsl -e bash -lc "cmd"` 中 `-l` 让 bash 作为**登录 shell** 启动。bash 登录 shell 看到 stdin/stdout 是 TTY（PowerShell 传过来的就是）→ 进交互模式 → 先读 `.bash_profile` / `.profile`、打印 PS1 等用户输入 → 然后才把 `-c` 字符串作为命令执行。用户的默认登录 shell 是 fish 时，会先看到 fish 的 welcome / 主题渲染，命令才执行。
+
+**官方文档依据**（Microsoft WSL docs）：
+> "The Linux command following `wsl` is handled like any command run in WSL. Run as the WSL default user."
+> `wsl -e` 跳过默认 Linux shell，但仍会按你指定的 shell（bash）启动；如果加了 `-l` 它就走 login shell 路径。
+
+**修复**：去掉 `-l`，用 `bash -c` 直接执行命令字符串：
+
+```powershell
+# ❌ 错 — 触发登录 shell 交互模式
+function hermes { wsl -e bash -lc "/home/po/.../hermes $($args -join ' ')" }
+
+# ✅ 对 — bash -c 不读 .bash_profile，不进交互模式
+function hermes { wsl -e bash -c "/home/po/.../hermes $($args -join ' ')" }
+```
+
+**更优雅**：直接走 `wsl` 默认 shell，把 HOME 用 env 前缀传给 hermes：
+
+```powershell
+# 最简版：让 wsl 默认 shell（root 的 fish / bash）直接 exec hermes
+function hermes { wsl HOME=/home/po /home/po/.hermes/hermes-agent/venv/bin/hermes $args }
+```
+
+`HOME=val command` 是 POSIX / fish / zsh / dash 通用语法，shell 看到就直接 exec hermes，不启新 shell。
+
+**副作用**：`bash -c`（去掉 `-l`）不读 `.bash_profile` / `.profile`，所以 root 登录 shell 里 export 的 env（API key / proxy）**会丢**。如果 hermes 报"no API keys"，需要显式透传：
+
+```powershell
+# 把 PowerShell 的关键 env 透传给 WSL root
+function hermes {
+  $envArgs = @()
+  foreach ($name in 'HTTPS_PROXY','HTTP_PROXY','BAILIAN_API_KEY','DEEPSEEK_API_KEY','NAPCAT_TOKEN') {
+    if ($env:$name) { $envArgs += '--env', "$name=$($env:$name)" }
+  }
+  & wsl.exe @envArgs -e bash -c "HOME=/home/po /home/po/.hermes/hermes-agent/venv/bin/hermes $($args -join ' ')"
+}
+```
+
+但 hermes 默认优先读 `~/.hermes/config.yaml` 里写死的 key，不一定依赖瞬时 env。先试最简版，报"未配置"再加 env 透传。
+
+**官方 env 共享机制（更系统化）**：PowerShell 那边设置 `WSLENV` 变量列表，决定哪些 Windows env 自动透传到 WSL：
+
+```powershell
+$env:WSLENV = "HTTPS_PROXY/u:HTTP_PROXY/u:BAILIAN_API_KEY/u:DEEPSEEK_API_KEY/u:NAPCAT_TOKEN/u"
+```
+
+`/u` 标志表示"只在从 Win32 调用 WSL 时透传"。设一次，所有 `wsl` 命令都生效。
+
+### 根本修复（一次解决所有坑）
+
+把 hermes 需要的 PATH 补进 `/etc/profile.d/`，所有用户登录都有：
+
+```bash
+sudo tee /etc/profile.d/hermes-env.sh <<'EOF'
+export PATH="$HOME/.local/bin:$PATH"
+# 其他需要持久化的 env 在这里 export
+EOF
+```
+
+要 sudo，你自己粘贴进 WSL 跑。
+
 ## 参考文件
 
 - `references/deepseek-react-patterns.md` — DeepSeek ReAct Agent 在 WSL 下的具体坑
@@ -379,4 +526,7 @@ if __name__ == "__main__":
 - `references/mcp-fastmcp-api.md` — MCP FastMCP 三种传输协议的现行 API（从 wsl-python-development 合并）
 - `references/paddlepaddle-setup.md` — 百度飞桨在 WSL 上的安装、GPU 配置、3.3.0 API 已知坑
 - `references/indextts-deploy.md` — Index-TTS 在 WSL 上的完整部署实录（依赖安装、模型下载、AstrBot 插件）
+- `references/powershell-wsl-launch.md` — PowerShell 一行启动 WSL 里安装的 CLI（hermes / claude / codex 等）的 4 个连环坑（含 `bash -lc` 登录 shell 卡 PS1 / fish welcome）
+- `references/wsl-to-windows-file-copy.md` — WSL → Windows NTFS 大文件传输的 `cp` 静默截断 + PowerShell SMB 路径（`\\wsl.localhost\<distro>\...`）解法
+- `references/github-release-download.md` — GitHub release 资产下载的 JWT 签名陷阱（续传无效 / WSL 长连接慢）和 gh CLI + 浏览器替代方案
 - `templates/hello_paddle_mnist.py` — 飞桨 3.3.0 兼容的 MNIST 训练模板

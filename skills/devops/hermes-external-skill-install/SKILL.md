@@ -19,25 +19,131 @@ Install external tools or skills from GitHub repos into Hermes. Covers two disti
 - 仓库包含 `SKILL.md`
 - 用户提到 `npx skills add` 或 `skills add` 但命令失败
 - 用户问"这些 skill 从哪来的"、"给其他 agent 也装这些" → 先查 `references/hermes-management-skills.md` 获取已知来源
+- 用户问"ClawHub 里有没有 X" → 直接 `clawhub search` + 参考 `references/clawhub-toon-example.md` 里的评估矩阵模式
 
 ## 决策分支: Pure Skill vs Tool-with-Skill vs npm-Package Skill Generator
 
 Before proceeding, classify the source:
 
-| Signal | Pure Skill (Case A) | Tool-with-Skill (Case B) | npm-Package Generator (Case C) |
-|--------|-------------------|-------------------------|-------------------------------|
-| Source format | GitHub repo URL | GitHub repo URL | `npm install -g @scope/package` |
-| Has `SKILL.md` directly | ✅ Yes | ✅ Yes (within repo) | ❌ No — CLI **generates** SKILL.md files |
-| Has `pyproject.toml` / `package.json` | ❌ No | ✅ Yes | ✅ Yes (the npm package itself) |
-| Has system deps | ❌ Minimal | ✅ Yes (ffmpeg, brew, etc.) | ⚠️ May need companion tools (e.g., openspec CLI) |
-| Workflow | Clone SKILL.md | Clone app + install deps + symlink | `npm install -g` → `tool init` → copy generated skills |
-| Example | `alchaincyf/nuwa-skill` | `browser-use/video-use` | `@rpamis/comet` (generates 28 platform skill sets) |
+| Signal | Pure Skill (Case A) | Tool-with-Skill (Case B) | npm-Package Generator (Case C) | ClawHub Skill (Case D) |
+|--------|-------------------|-------------------------|-------------------------------|------------------------|
+| Source format | GitHub repo URL | GitHub repo URL | `npm install -g @scope/package` | `clawhub search <query>` then `clawhub install <slug>` |
+| Has `SKILL.md` directly | ✅ Yes | ✅ Yes (within repo) | ❌ No — CLI **generates** SKILL.md files | ✅ Yes (in registry) |
+| Has `pyproject.toml` / `package.json` | ❌ No | ✅ Yes | ✅ Yes (the npm package itself) | ⚠️ Optional — some are pure docs, some bundle scripts |
+| Has system deps | ❌ Minimal | ✅ Yes (ffmpeg, brew, etc.) | ⚠️ May need companion tools (e.g., openspec CLI) | ⚠️ Variable — check `scripts/` field on hub page |
+| Workflow | Clone SKILL.md | Clone app + install deps + symlink | `npm install -g` → `tool init` → copy generated skills | `clawhub search` → evaluate → `clawhub install <slug>` (and possibly copy bundled scripts to PATH) |
+| Example | `alchaincyf/nuwa-skill` | `browser-use/video-use` | `@rpamis/comet` (generates 28 platform skill sets) | `@bonk-moltbot/toon`, `@zmkkevin/toon-json` |
 
 **Decision rule:** If the user points to an npm package name (or gives a GitHub repo for an npm package) that is a CLI generating SKILL.md files for multiple AI coding platforms, treat as Case C.
 
+**Decision rule (D):** If the user says "找一下有没有 X skill" / "看看有没有装 X" / "装个 X skill" without naming a specific repo, and ClawHub is the installed marketplace CLI (`clawhub --version` to confirm), use **Case D**. Always evaluate multiple candidates before installing — the top-rated search hit is not always the right one. See Case D section below.
+
 ---
 
-## Case A: Pure Skill Install (Original Workflow)
+## Case D: ClawHub Skill Discovery & Evaluation
+
+For users who ask "有没有 X skill" or want to browse the registry without naming a specific repo. ClawHub is the official OpenClaw skill marketplace.
+
+### D0: Confirm ClawHub is installed
+
+```bash
+clawhub --version   # should print "ClawHub CLI vX.Y.Z"
+```
+
+If not installed: `npm install -g @openclaw/clawhub` (Case C workflow).
+
+### D1: Search — only one command works
+
+**Pitfall:** `clawhub info <slug>` does NOT exist. The CLI only has: `search`, `install`, `update`, `uninstall`, `list`, `pin`, `unpin`, `login`, `logout`, `whoami`, `auth`. Running `clawhub info foo bar` returns a usage error every time.
+
+```bash
+# ✅ Correct
+clawhub search <query>
+
+# ❌ Wrong (no such command)
+clawhub info <slug>
+```
+
+The `search` output is a vertical list with author, name, and a relevance-style score:
+```
+- Searching
+toon  @bonk-moltbot  Toon  (3.690)
+toon-adoption-skill  @nelohenriq  TOON  (2.515)
+toon-json  @zmkkevin  Shrink JSON in Prompts (TOON Encoder/Decoder)  (2.513)
+toonany  @casperkwok  Toonany  (1.490)
+```
+
+### D2: Evaluate candidates — the matrix pattern
+
+The top hit by score is **not always the right one**. Pull each candidate's hub page and build a matrix before deciding.
+
+**Pitfall:** The hub URL is `https://hub.openclaw.ai/<author>/<slug>`, NOT `clawhub.dev` (returns 404 / fetch errors) and NOT `clawhub.ai` (different page).
+
+```bash
+web_extract urls=["https://hub.openclaw.ai/<author>/<slug>"]
+```
+
+Compare on at least these axes:
+
+| Axis | What to check | Why it matters |
+|------|---------------|----------------|
+| **Positioning** | What is the skill FOR? (encoding tool / spec doc / pipe wrapper / SDK binding) | A pure spec doc with no scripts gives the agent nothing to run |
+| **Spec version** | If the skill claims a version (e.g., "TOON v1") and a reference SDK exists with a different version (e.g., `@toon-format/toon` v3.3), flag the mismatch | Round-trip may fail silently |
+| **Implementation** | Bundled script? Wraps official CLI? Or pure docs? | Pure docs → agent has to write code each time → unreliable |
+| **Dependency** | Self-contained / needs `npx` / needs Python / needs system binary | Drives install path |
+| **Reliability** | Author's track record, last updated, recent commits | Stale = likely broken against latest deps |
+| **Hermes fit** | Does installing give me a SKILL.md I can read, a script in PATH I can run, or both? | `clawhub install` puts things in `skills/`, NOT `bin/` |
+
+**Decision rule of thumb:**
+- If multiple candidates exist, prefer the one using the **official upstream CLI/SDK** over independent reimplementations (avoids version drift).
+- Prefer a skill that exposes a **runnable command** over one that just teaches the agent the syntax.
+- Avoid "pure teaching" skills (`xxx-adoption`, `xxx-guide`) unless the agent already has a reliable encoder/decoder to use.
+
+### D3: Install — and copy bundled scripts to PATH
+
+```bash
+clawhub install <slug>
+```
+
+**Pitfall (CRITICAL):** `clawhub install <slug>` puts the SKILL.md and bundled files in `~/.hermes/skills/<dir>/<slug>/`. It does **NOT** copy any executable scripts into `~/.local/bin` or anywhere on `$PATH`. For skills whose value is a wrapper script (e.g., `@bonk-moltbot/toon` ships `scripts/toon` which wraps `npx @toon-format/cli`), `install` alone is insufficient.
+
+**Empty-shell trap (verified 2026-07-12):** A ClawHub skill's SKILL.md may **describe** a `scripts/<bin>` wrapper without shipping one. `clawhub install @bonk-moltbot/toon` produced a package containing only `_meta.json`, `SKILL.md`, `skill-card.md`, `.clawhub/origin.json` — **zero executable files**. The README said "Copy script to PATH: `cp scripts/toon ~/.local/bin/`" but `scripts/` didn't exist. Always verify before recommending the install path:
+
+```bash
+# After clawhub install, before any "cp scripts/<bin>" recommendation:
+ls ~/.hermes/skills/<dir>/<slug>/scripts/ 2>/dev/null | head
+# If empty/missing: skill is doc-only, write your own wrapper or pick a different skill
+```
+
+**If the script does exist**, copy + chmod + verify:
+
+```bash
+cp ~/.hermes/skills/<dir>/<slug>/scripts/<bin> ~/.local/bin/
+chmod +x ~/.local/bin/<bin>
+command -v <bin>     # verify
+```
+
+If `~/.local/bin` isn't on the user's `$PATH` (Hermes TUI launches from fish via .bashrc — verify with `echo $PATH | tr ':' '\n' | grep local/bin`), symlink into a PATH dir that IS populated:
+
+```bash
+ln -sf ~/.hermes/skills/<dir>/<slug>/scripts/<bin> ~/.npm-global/bin/<bin>
+# or whichever dir the user's PATH includes
+```
+
+**When the skill is empty-shell but the underlying SDK is installed locally**, write your own minimal wrapper (15-30 lines) rather than skipping. Example: `@toon-format/toon` was already in `~/.npm-global/lib/node_modules/` so a 14-line Node ESM wrapper at `~/.local/bin/toon` was cleaner than installing the broken skill.
+
+### D4: Verify
+
+```bash
+skills_list | grep -i <name>          # skill registered
+skill_view <name>                     # SKILL.md loads
+ls ~/.hermes/skills/<dir>/<slug>/     # files present
+[ -x ~/.local/bin/<bin> ] && echo OK  # if bundled a script
+```
+
+### D5: Worked example — installing TOON format
+
+See `references/clawhub-toon-example.md` for the full evaluation matrix and install steps from the 2026-07-12 session (4 candidates evaluated, original recommendation `@bonk-moltbot/toon` was **overturned** after install verification: skill shipped without its promised `scripts/toon` wrapper — empty shell). The actual shipped artifact was a 14-line Node ESM wrapper at `~/.local/bin/toon` that imports the locally-installed `@toon-format/toon` SDK directly. Lesson: never recommend an install path without `ls scripts/` after `clawhub install`.
 
 ### A1: 判断安装方法
 

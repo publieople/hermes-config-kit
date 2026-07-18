@@ -50,7 +50,7 @@ async def cmd_pic(self, event: AstrMessageEvent, category: str = ""):
     yield event.plain_result("...")  # 可 yield 多个 result
 ```
 
-**注意**：参数按空格分隔。如果用 `/来点 风景 二次元`，函数签名是 `category: str = "", sub: str = ""` 才能接住两个。
+**注意**:参数按空格分隔,**只取前 N 个** (N=函数参数个数)。番剧名/路径含空格会被截断,见 `SKILL.md §0.5` 的 GreedyStr 解法。如果用 `/来点 风景 二次元`,函数签名是 `category: str = "", sub: str = ""` 才能接住两个;超过 2 个 token 一律丢。
 
 ### `@llm_tool(name, ...)`
 ```python

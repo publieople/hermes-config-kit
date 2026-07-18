@@ -1,9 +1,7 @@
 ---
 name: astrbot-plugin-development
-description: Build an AstrBot plugin — covers fork-existing vs from-scratch decision, 4-quadrant research gate, doc reading order, decorator mechanics, schema field patterns, ad-hoc verification. Use when user asks to "做一个 AstrBot 插件" or "集成 X 到 AstrBot" or describes a bot feature.
+description: Build an AstrBot plugin — covers fork-existing vs from-scratch decision, 4-quadrant research gate, doc reading order, decorator mechanics, schema field patterns, ad-hoc verification, CI preflight script. Use when user asks to "做一个 AstrBot 插件" or "集成 X 到 AstrBot" or describes a bot feature.
 ---
-
-# AstrBot plugin development
 
 ## 0. 4-quadrant research gate (BEFORE writing code)
 
@@ -51,10 +49,9 @@ class MyPlugin(Star):
 
     async def initialize(self):
         ...
-
-    async def terminate(self):
-        ...
 ```
+
+Image component import: `from astrbot.core.message.components import Image` (note: NOT `from astrbot.api.message_components` — that's a re-export, core is the real one).
 
 ## 2. Decoration mechanics — read this before writing commands
 
@@ -72,6 +69,26 @@ For N similar commands (e.g. one per category), if N is large use **one @command
 
 For `_conf_schema.json` field types supported: `string`, `text`, `int`, `float`, `bool`, `object`, `list`, `dict`, `template_list`. Special values: `select_provider`, `select_provider_tts`, `select_provider_stt`, `select_persona`, `select_knowledgebase`. For multi-select use `list` with `items: {type: "string", options: [...], labels: [...]}` (labels show in WebUI as Chinese names). See references/schema-field-patterns.md.
 
+### 2.1 HARD GATE: modify existing `@command` signature / add args → load `references/command-token-pipeline.md` FIRST
+
+This skill already documents every AstrBot command-arg pitfall in detail. **Do not patch from memory.** When the task is any of:
+
+- Adding a 3rd parameter to an existing command
+- Adding optional args (weekday, mode, flags) to existing 1-arg command
+- User reports "还是有问题" / "命令没生效" / "参数被吞" / "时间格式错误但我写的对"
+- Touching `@filter.command`/`@filter.regex` decorator mechanics
+
+→ **Before writing the first patch**, `skill_view(name='astrbot-plugin-development', file_path='references/command-token-pipeline.md')`. The reference covers token-pipeline trace, GreedyStr default-value trap, qzone-style self-parse pattern, and `@filter.regex` not registering as command route.
+
+**Symptom of skipping this gate**: 3+ rounds of "还是有问题" with each round layering a new workaround on top of the previous (GreedyStr → regex → event.message_str → …) instead of stepping back to the root cause (which the reference already explains). Each round costs the user a `sudo systemctl restart astrbot` cycle and a Journal audit. **If you've already done 2 patches without success, you're not debugging — you're accumulating debt.** Stop, load the reference, re-trace.
+
+**Flow**:
+1. `skill_view(name='astrbot-plugin-development', file_path='references/command-token-pipeline.md')` — read the full reference
+2. Trace current handler: `event.message_str` → AstrBot split → `validate_and_convert_params` → handler's actual args
+3. Pick pattern from the reference's decision tree (qzone-style self-parse is the default)
+4. Write patch + `ast.parse` syntax check + `logger.warning(f"DEBUG args={...}")` first-run verify
+5. Sync to `data/plugins/` instance, ask user to restart, **wait for them to confirm** before claiming done
+
 ## 3. LLM tool function signature
 
 ```python
@@ -88,7 +105,7 @@ async def tool_my(self, event: AstrMessageEvent, param1: str = ""):
 
 Function docstring's `Args:` block IS the JSON schema AstrBot generates. Missing/wrong format → empty schema, tool won't get called.
 
-## 3.5 Calling LLM from within a plugin (programmatic, not tool)
+### 3.5 Calling LLM from within a plugin (programmatic, not tool)
 
 Use when you need LLM text generation inside a handler without the LLM itself deciding to invoke a tool.
 
@@ -109,7 +126,7 @@ except Exception as e:
     result = fallback
 ```
 
-**Pitfalls:**
+Pitfalls:
 - `session_id` must not collide with real LLM sessions — prefix with `_`
 - `contexts=[]` is single-turn — correct for translation/classification
 - Some providers raise `TypeError` when `model=` is passed; catch bare except or try without model
@@ -121,8 +138,6 @@ except Exception as e:
 - `yield event.plain_result("text")` — for text
 - `yield event.image_result(url)` — image from URL (framework downloads to local)
 - `yield event.chain_result([Image.fromURL(url), Plain("text")])` — mixed
-
-Image component import: `from astrbot.core.message.components import Image` (note: NOT `from astrbot.api.message_components` — that's a re-export, core is the real one).
 
 ## 5. Verifying it works
 
@@ -181,6 +196,32 @@ Run with the venv that has the plugin's deps: `~/.local/share/uv/tools/astrbot/b
 
 **Delete the script after it passes.** State as "ad-hoc verification, 1-shot, deleted" — never claim "fully verified".
 
+### 6.1 CI-style preflight script — mirror GitHub Actions before pushing
+
+Don't push blind and wait 2 min for CI to fail. Mirror the GitHub Actions CI workflow locally:
+
+```bash
+bash templates/ci-preflight.sh            # in plugin repo root
+bash templates/ci-preflight.sh --keep-venv # keep venv if you want to poke at failures
+```
+
+The script creates a fresh `/tmp/.venv-astrbot-preflight-$$`, installs `requirements.txt` (including `astrbot` from PyPI — v4.26.5+), then runs `ruff check .` → `ruff format --check .` → `mypy src main.py` → `pytest -q` in sequence. Exits non-zero on first failure. Cleans up the venv on exit unless `--keep-venv`.
+
+**Why this works when direct `python -m pytest` doesn't**: pytest in plugin tests imports `astrbot.api` (and `astrbot_plugin_x` package, which uses `astrbot.core.star`). The plugin's venv doesn't have these. AstrBot IS on PyPI (pip installable since v4.20+) — `pip install -r requirements.txt` includes it. Standalone git clones fail without this. The preflight script sidesteps the issue entirely.
+
+**If CI fails but preflight passed**: mismatch between local ruff/mypy/pytest versions and CI pinned versions. Pin in requirements-dev.txt or just trust the preflight and iterate via CI (slower but matches reality).
+
+**`ruff format` must run on whole project, not just changed files** — CI runs `ruff format --check .` and `ruff check .` against the whole repo. Local `ruff format main.py` may pass while `tests/test_foo.py` violates line-length and breaks CI. The preflight script catches this.
+
+### 6.2 The "still failing after N patches" brake
+
+If you've made 2 patches and the user is still reporting issues, STOP patching. Three-step recovery:
+1. Add `logger.warning(f"DEBUG raw={event.message_str!r} tokens={tokens!r}")` at handler entry.
+2. Sync to `data/plugins/`, ask user to restart and re-trigger.
+3. Read journal output, **trace the actual values**, then patch.
+
+Brain-patching the parser layer when you don't know what tokens the handler receives is **gambling with the user's restart cycles**. Real example: this skill's parent conversation added `weekday` parsing 4 times across `GreedyStr` → `regex` → `event.message_str` → reverse-scan variants before a debug print would have shown `[MSG_ID:1744020215]` was in the tail. One debug print would have saved 3 rounds.
+
 ## 7. Git workflow (when publishing to fork)
 
 ```bash
@@ -210,9 +251,13 @@ GitHub auto-updates the open PR. No new PR needed, no force-push required on a s
 
 Clone tip: `gh repo clone publieople/astrbot_plugin_bangumi -- --branch feat/post-subscribe-broadcast-fill` correctly sets `origin` to the fork and `upstream` to the original repo, with the branch already checked out.
 
-## 7.2 Process verification before claiming done
+### 7.2 Process verification before claiming done
 
 Calling work done after "check + push + PR update" needs a final process check: have I loaded and followed all relevant skills? If the user says "检查流程规范" or hints at process, re-scan available skills for workflow/process skills before responding.
+
+### 7.3 PR title/body updates use `gh pr edit`
+
+`gh pr create` on an existing PR returns "already exists". To change title/body of an open PR: `gh pr edit <num> --title "..." --body "..."`. PR head SHA changes (after force-push) sync to the PR automatically — verify with `gh pr view <num> --json headRefOid --jq .headRefOid`.
 
 ## 8. Publishing to the AstrBot Plugin Marketplace
 
@@ -247,7 +292,8 @@ Notes:
 - `tags` is optional but strongly recommended for discoverability in the marketplace
 - `social_link` is optional (e.g. personal site, GitHub profile)
 
-**Checkboxes (all required):**
+### Checkboxes (all required)
+
 1. My plugin has undergone thorough testing.
 2. My plugin does not contain malicious code.
 3. I have read and agree Code of Conduct.
@@ -289,7 +335,6 @@ Key: the worker literally clones your repo, copies the plugin into AstrBot's `da
 ### Marketplace metadata (from `scripts/transform_plugin_data/run.py`)
 
 After the Issue passes CI, a cron job (`transform-plugin-data.yml`, hourly) builds the marketplace cache by:
-
 1. **GitHub API**: fetches stars, last updated, default branch for each plugin repo
 2. **metadata.yaml on GitHub**: extracts `version`, `astrbot_version` (optional), `support_platforms` (optional)
 3. **logo.png** from repo root: if present, shown as the plugin card icon
@@ -312,14 +357,6 @@ support_platforms:                  # optional — supported IM platforms list
   - telegram
 ```
 
-### Reference files
-
-- Official docs: https://docs.astrbot.app/dev/star/plugin-publish.html
-- Plugins Collection Issue template: `AstrBotDevs/AstrBot_Plugins_Collection/.github/ISSUE_TEMPLATE/PLUGIN_PUBLISH.yml`
-- Live `plugins.json`: `https://github.com/AstrBotDevs/AstrBot_Plugins_Collection/blob/main/plugins.json`
-- Validation source: `scripts/validate_plugins/run.py` in the same repo
-- Transform source: `scripts/transform_plugin_data/run.py` — reads version/astrbot_version/support_platforms from metadata.yaml
-
 ## Pitfalls (from real sessions)
 
 - `@register` lives on the **class**, not the function. AST checkers that only walk `FunctionDef` will miss it.
@@ -332,7 +369,7 @@ support_platforms:                  # optional — supported IM platforms list
 - Version number: **only in `metadata.yaml`** — do NOT manually sync the version string in `@register(...)` decorator with metadata.yaml. Keep both the same but only bump in metadata.yaml after a release; `@register`'s desc field describes the plugin, it's not a version authority.
 - **Repo URL cannot end with `.git`** — CI's `normalize_repo_url()` explicitly strips `.git` suffix, so `https://github.com/user/name` (no `.git`) is the canonical form. This applies to both `metadata.yaml` and the Issue JSON.
 - **Duplicate `import aiofiles`** — AstrBot v4 bundles `aiofiles>=25.1.0` (confirmed from requirements.txt), so `import aiofiles` at module level works fine. Don't also re-import inside the function body where it's used — one import at the top is enough. More generally, don't inline-import deps that are already imported at module level or known to be in AstrBot's bundled deps.
-- **Test env dependency** — Plugin tests (pytest) depend on AstrBot runtime packages (aiohttp, pydantic, sqlalchemy, astrbot core). Running from a standalone git clone's `.venv` will fail with `ModuleNotFoundError`. Either run from the AstrBot install dir's venv or install deps manually. Test collection fail ≠ code broken.
+- **Test env dependency** — Plugin tests (pytest) depend on AstrBot runtime packages (aiohttp, pydantic, sqlalchemy, astrbot core). Running from a standalone git clone's `.venv` will fail with `ModuleNotFoundError`. Either run from the AstrBot install dir's venv or install deps manually. Use `templates/ci-preflight.sh` (§6.1) which auto-installs `astrbot` from PyPI alongside the plugin's `requirements.txt`.
 - **User says "检查流程规范"** — this is a signal you skipped a process skill. Load `code-review-and-quality` and `finishing-a-development-branch` explicitly, announce you're using them, and step through. Pro forma completion without the skill scan gets corrected.
 - **mypy `no-any-return` with `getattr` guard** — Many AstrBot plugins use `storage = getattr(self, "storage", None)` as a guard before calling methods. `getattr` returns `Any`, so when you change a method from `-> None` to `-> int` and `return updated`, mypy flags `no-any-return`. Fix: `return updated  # type: ignore[no-any-return]` — the smallest diff, matches how mypy already treats `Any` from `getattr`.
 - **README must document every command** — Some plugins have a CI test that parses all `@filter.command(...)` / `@filter.command_group(...)` from `main.py` and checks each appears as a `| \\`/command\\` |` row in `README.md`. Adding a new command without adding its README row = CI failure. Check `tests/test_project_manifest.py` or similar for a `test_readme_documents_registered_commands` function. Fix: add a table row with the command name, description, params, and example.
@@ -342,75 +379,14 @@ support_platforms:                  # optional — supported IM platforms list
 - **`ruff format` 必须跑全项目，不只改动的文件** — fork 项目（如 `astrbot-plugin-bangumi`）的 CI 跑 `ruff format --check .` 和 `ruff check .`，作用在整个项目。本地只 `ruff format main.py src/app/subscription_service.py` 可能漏过其它文件的格式问题——CI 会以"Would reformat: <file>"失败。同理 `ruff check .`。永远跑完整项目。
 - **`git commit --amend` 前必须保证 working tree 干净** — 修改文件后 amend 只把 staged 改动折进 commit。如果 amend 后又跑了 `ruff format` 修改 working tree 但没 add+amend，commit 内容与 working tree 漂移。force-push 之后 CI 跑 commit 里的代码，声称"需 reformat"（因为 working tree 的 reformat 没进 commit）。修复: amend 前 `git status --short`；或先 `git add -u && git commit --amend`；或 amend 后 `git status` 确认无 M。
 - **PR title/body 更新用 `gh pr edit --title --body`** — `gh pr create` 对已存在的 PR 会报"already exists"。要改标题/正文用 `gh pr edit <num> --title "..." --body "..."`。PR head SHA 变更（force push 后）由 GitHub 自动同步到 PR——`gh pr view <num> --json headRefOid --jq .headRefOid` 验证同步完成。
-- **AstrBot v4 session 字符串 = `platform_id:MessageType.GroupMessage:session_id`** — 不是 adapter 类名（不是 `aiocqhttp`）。`platform_id` 是用户在 `cmd_config.json` 里 `platforms[].id` 字段配的（公仆这里叫 `default`）；`MessageType` 枚举合法值是 CamelCase `GroupMessage`/`FriendMessage`/`OtherMessage`（来自 `astrbot/core/platform/message_type.py`）。常见错误：
-  - 用 adapter 名 `aiocqhttp` 当 platform_id → `context.send_message` 在 `platform_manager.platform_insts` 找不到匹配 → 报 `主动发送未找到平台`
-  - 用 aiocqhttp 事件 payload 里的 `group` 当 MessageType → 报 `不合法的 session 字符串: 'group' is not a valid MessageType`
-  修法：枚举 `context.platform_manager.platform_insts`，找到 `meta().name == 'aiocqhttp'` 的 adapter，用 `meta().id` 拼真 session。详见 `references/session-string-format.md`。
-- **测试「轮询 → 状态变更 → 推送」链路的捷径** — 当插件架构是「定时从外部 API 拉数据 → 检测到变更 → 推送通知」（如 BGM 番剧追番），`check_updates` 在生产里可能几小时甚至几天才触发一次新推送分支。集成测试和单测都难复现。最干净的调试方式是：**临时把 DB 状态回退一步**（如 `current_episode -= 1`），让下一次定时器自然走完 `API fetch → diff → notify → send_message` 全路径。配合 `/<plugin>测试 <id>` 命令比 cron 等几分钟快几十倍。回退值会被定时器自动写回真值，不需要单独回滚逻辑（异常分支才需要）。
-- **Plugin reload 与 cron 触发撞点的 race** — 用户在 WebUI 重载（或 `sudo systemctl restart`）插件时，恰好撞上 15 分钟轮询点，`terminate()` 关共享 aiohttp session 后 `check_updates` 还在 await → traceback 在 `aiohttp session.request` 的 `session closed` 错误。表现吓人但无副作用（下次轮询点恢复）。不是 fix 优先级，**先记日志即可**，别急着加 `await in_flight_task` 或 graceful shutdown——除非用户主动反馈 reload 后推送漏发才处理。开发期 `ASTRBOT_RELOAD=1` 下尤其常见，因为 reload 频率高。
 
-- **ASTRBOT_RELOAD=1 实际状态要验证，别信用户记忆里"插件改了自动热重载"** — v3 时代有自动 reload 行为，v4 必须显式 `ASTRBOT_RELOAD=1` 才启 watcher。验证：```bash
-  cat /proc/$(pgrep -f 'astrbot run' | head -1)/environ | tr '\0' '\n' | grep ASTRBOT_RELOAD
-  # 无输出 = 没启 watcher, 改了代码必须 sudo systemctl restart astrbot
-  ```
-  即使 watcher 启用，**子模块（`src/app/subscription_service.py` 这种被 import 的）不会重新 import** — Python 模块缓存机制。watcher 只重建 main.py 的 class 实例，编辑 sub-module 必须 restart。`ASTRBOT_RELOAD=1` 适合频繁改 main.py 的开发期；生产前关掉以避免 reload×cron race（见上条）。
+- **CI 测试已存在行为改变 → 改测试不是改产品代码** — PR #18 写了 `test_broadcast_time_crud_and_batch_update`，该测试假设 `set_subject_broadcast_time` 设值后 `batch_update` 能覆盖（updated=2）。给产品加 manual_lock 之后这个测试**直接过期**——product behavior 变了，老契约失效。修法：先确认新行为对（用 tempdir sqlite 跑 4 状态 round-trip），再改测试保留它的契约意图（"batch_update 把非锁定记录批量覆盖"）。老测试改 = 一行 `set_subject_broadcast_time("100", None)` 解锁；新行为加进 `test_manual_lock_blocks_batch_update_and_clears_on_reset`。原则：**老测试失败先怀疑契约是否过期**，别动产品代码去迎合死测试。
 
-- **30h 制 / 跨日档期显示：time 和 weekday 不在同一个数据源时，把 weekday 也存进 schema** — bgmlist API 只给 HH:MM 不给 weekday，单纯"hh<5 +24 → 26:08"会出现"展示在周六但用户期望周日"的错位（因为表格 wid 来自 BGM calendar 实时拉取，写库和展示时机不同，calendar 缓存可能 stale）。修法 6 步：
-  1. `ALTER TABLE <table> ADD COLUMN broadcast_weekday INTEGER`（SQLite 直接 ALTER，无需 migration 框架）
-  2. `models.py` 加 `Mapped[int | None]` 字段
-  3. `_auto_fill_broadcast_times` 拉 calendar 同时算 `(shifted_time, shifted_weekday)` 元组，扩展 `batch_update_broadcast_times(mapping)` 接受 `dict[str, str | tuple[str, int | None]]`
-  4. 表格展示改读 DB weekday，**不再每次调 calendar API** — 避免 stale
-  5. `time_pattern` 放宽到 `^([01]\d|2[0-9]):([0-5]\d)$`（24-29h）
-  6. SQL 一次性回填（sandbox 拒网络时从日志截图抄 weekday）
-  root cause：**展示字段跨语义边界但数据来自不同源**。
+- **扩展命令参数 ponytail：解析多格式在同字段内而非加新 arg** — `@command("X")` 装饰器的参数列表在 class body 里是 literal，加第三个参数意味着新装饰器（违反 `@command` 类加载扫描约束）。ponytail 解决：复用现有 `time` 字段解析"周X HH:MM"或"X HH:MM"前缀。一段正则剥掉可选 weekday，剩下的就是 HH:MM，校验一次正则。命令签名不变，下游 setter 拿 `(time_str, weekday_optional)` 即可。`/放送时间 <番> 周三 22:00` / `/放送时间 <番> 5 22:00` / `/放送时间 <番> 22:00` 三种都吃。**不要**为"加一个可选参数"新开装饰器或新命令——用户通常不在乎 UX 微调，能用一个命令吸收就吸收。
 
-- **Schema 列新增（SQLite + SQLAlchemy）的最小迁移** — 不引入 Alembic 不写 migration 脚本：```bash
-  sqlite3 data/plugin_data/<plugin>/data.db "ALTER TABLE <table> ADD COLUMN <col> <type>;"
-  ```
-  然后同时改 `models.py` 加 `Mapped[...]` 字段。SQLAlchemy 启动时**不会** ALTER 已存在的表（它只 CREATE），所以缺一不可：新 INSERT/UPDATE 含新列 ORM 会持久化；旧 INSERT 不含则该列 NULL。**不要把 ALTER 留给 ORM**。
-
-- **`bool` schema 字段的"feature toggle"最小模式（用户偏好：默认开启、可关）** — 加 `{name}: {description, type: "bool", hint, default: true/false}` → 在 `ConfigManager` 加 `def get_<name>(self) -> bool: return self._get_bool("<name>", <default>)` → 显示侧用一个 thin wrapper `_fmt_<name>_cfg(x)` = `_fmt_<name>(x) + if not self.config_manager.get_<name>(): fallback`，3 处展示统一切到 wrapper，关闭开关即可改语义而不动逻辑。`bool` schema 字段在 AstrBot WebUI 自动渲染为开关，不需要前端代码。
-
-- **"把 X 流程和我讲一遍"的回应格式** — 用户说这话时，**literal trace** 而非 fix：
-  ```
-  1. entry (what user types)
-  2. handler A → calls B
-  3. ...每个数据源（DB table / API / config field）逐个列...
-  4. final output
-  ```
-  不要在这时写代码改东西 — 除非用户后续明确说"去改"。可以指出数据流中的可疑点，但用户问的是 trace。
-
-- **多轮 "还是有问题" 是 root cause 提示，不是重复** — 第一次 fix 只动了 surface bug（30h 显示），用户说"还是有问题"时意味着 surface bug 的根因还没找到（weekday 数据源问题）。第二次 fix 应**回头看数据流**而不是继续调 surface 逻辑。看到 "X 没生效 / 还有问题" 信号 → 立刻回到 step 1 重读数据流，找出 `time` 来自源 A、`weekday` 来自源 B 这种 asymmetry。
-
-- **sandbox 没网络时用"日志抄 + SQL 直接回填"兜底** — 本地修代码改 SQL 时遇到 sandbox `ConnectionRefusedError: api.bgm.tv`，无法 curl 验证 weekday。修法：从当天 journal/截图日志里手动抄 weekday（"这部番刚才显在【周五】→ wid=5"），UPDATE SQLite 直接灌。**好处是用户 reload 后立刻看到正确显示**，不需要等 `/刷新放送` 触发 fill。验证：`sqlite3 data.db "SELECT subject_id, name, broadcast_time, broadcast_weekday FROM bangumi_subjects ORDER BY broadcast_weekday, broadcast_time"`。
-
-- **Debug 命令（`/X测试 <X>`）应该接受人类可读的输入，不要只认技术 ID** — 第一次写 `/放送测试` 只接 `subject_id`，用户传中文番名 `描绘直至生命尽头` 直接 `未找到`。用户群里看到的是番剧名不是 ID，**debug 命令不强制 ID 是正确的产品决策**。修法：
-  ```python
-  if not self.storage.get_subject_name(target_id):  # 不是 ID 时
-      candidates = self.storage.find_group_subscription_candidates(
-          group_id=group_id, keyword=target_id, limit=3
-      )
-      if len(candidates) == 1:
-          target_id = str(candidates[0].subject_id)
-      elif len(candidates) > 1:
-          yield 候选列表让用户重试
-  ```
-  复用已有的 `find_*_candidates` 模糊匹配，0 行新逻辑。**这条也适用**：配置命令（`/bgm模板 1`）、查询命令（`/bgm <番剧名>`）—— 凡是用户大概率输入中文/自由文本的，都该模糊匹配。
-
-- **`get_subject_name` 返回 sentinel "未知番剧" 而非 None → boolean gate 静默失败** — 当 lookup 方法找不到条目时返回 truthy 字符串 `"未知番剧"` 作为 sentinel，外层 `if not self.storage.get_subject_name(target_id):`（期望 falsy 的 None）永远不进分支 → 中文名模糊匹配跳过 → 最终显示 `⚠️ 未知番剧 不在监控列表（未被订阅）`，错误信息是 "未知番剧" + 真实错误文本拼接。**根本原因**: sentinel strings 与 Python falsy 语义冲突。修法: 别用 `get_subject_name` 当 gate——直接用 `get_monitored_subjects()` 查全表，ID 匹配 + name 子串匹配。`if target_id in (s.name or "")` 比调用包装方法稳定。**通用教训**: 任何返回 sentinel 字符串代替 None 的方法都不要用作 boolean check 的 gate；如果必须判断 "是否找到"，用专门的不对外暴露的 query 方法。
-
-- **pyright (LSP) 严格子类型报错 ≠ CI 失败** — CI 只跑 `ruff check` + `ruff format` + `mypy` + `pytest`。`dict[str, tuple[str, int]]` 传给 `dict[str, str | tuple[str, int | None]]` 形参，pyright 报 strict 子类型不兼容（运行时完全合法），但 ruff/mypy/pytest 全过。**别为 LSP 警告专门 patch 代码**——除非用户用 Pyright/LSP 否则没影响。验证 CI 是不是用 pyright：`grep pyright .github/workflows/`。
-
-- **Calendar API 数据不稳定 → 用 begin ISO datetime 自带 weekday** — 当 BGM `/calendar` 在两次 fetch 之间返回同一 subject 不同 weekday（实测 bgmlist 出现过），任何依赖 calendar 的 weekday 都会错位。修法：换数据源。bgmlist 的 `begin` 字段是 ISO datetime，**`cst_dt.isoweekday()` 直接拿稳定的 weekday**（bgmlist 是 GitHub Pages 静态数据，不像 calendar API 那样缓存可变）。改 `_parse_broadcast_time(begin_iso) -> tuple[HH:MM, weekday]`，fetch 端签名同步扩到 `dict[str, tuple[str, int]]`。**trigger signal**：连续两次 `/刷新放送` 后表格 weekday 不一致（同一部番从周三变周四）。
-
-- **Patch 缩进陷阱：old_string 缺 4 空格会嵌套半个函数体** — 当 old_string 缺第一行 `return` 时（如 `if not X:\n    yield ...\n    return\n\ntarget_id = ...` 写成 `if not X:\n    yield ...\n    target_id = ...`），patch 后整段后续代码缩进多 4 空格 = 嵌套在 if 里，pyright 报"possibly unbound / not a known attribute of None"。**防御**：写 patch 前先把 old_string 前后 3 行读出来确认完整缩进；写完后 `git diff --stat` 看 lines 数对不对，单文件 +50/-3 而原文件才 +20 行 → 一定是嵌套错了。
-
-## See also
-
-- `references/decorator-quickref.md` — every decorator signature with one example
-- `references/schema-field-patterns.md` — `_conf_schema.json` field type cookbook
-- `references/common-bugs.md` — issues hit in real sessions (the "register on class" bug, the self-file existence check, Image.file/Reply.chain, etc.)
-- `references/patterns-cooldown.md` — per-session rate limiting with `unified_msg_origin` dict
-- `references/session-string-format.md` — `Context.send_message` session string anatomy: platform_id (user-configured) vs MessageType (CamelCase enum); how to look up the real platform_id from `context.platform_manager.platform_insts` instead of guessing
-- `references/broadcast-time-30h-weekday.md` — 30h 制周时间表 schema migration pattern: when display has cross-day semantics, store weekday alongside time; SQLite ALTER + SQLAlchemy 6-step recipe; user signal patterns ("还是有问题" = root cause missed)
-- `templates/verify-template.py` — copy + fill `<...>` placeholders for new plugin ad-hoc verification
+- **AstrBot `@filter.command` 用空格切 token、按位置分配给函数签名——第 3 token 被无声丢弃** — 命令处理路径（`astrbot/core/star/filter/command.py:209`）：```python
+message_str = re.sub(r"\s+", " ", event.get_message_str().strip())   # 规范化空白
+ls = message_str.split(" ")                                            # 按空格切
+ls = [param for param in ls if param]                                  # 去空字符串
+params = self.validate_and_convert_params(ls, self.handler_params)     # 按位置分配
+```
