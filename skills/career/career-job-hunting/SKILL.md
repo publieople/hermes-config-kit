@@ -222,6 +222,36 @@ Key strategy: **福州暑假无大厂AI机会 → 7-8月打磨简历 + 线上调
 - **JobClaw cookie management**: Cookies in `~/.jobclaw/cookies/` expire; run `jobclaw login --check` to verify before batch runs.
 - **Session recall tool is unreliable**: do not use session_search to find past internship discussions. Memory and skills carry the durable state.
 
+## Phase 0: Reconcile User Intent (Before Any Planning)
+
+**Always do this before writing a plan, picking companies, or editing the resume.** A user saying "let's discuss my internship plan" is NOT permission to start drafting — it's permission to *discover what the plan should be*.
+
+Pull signals from every available source and check them against each other:
+
+| Source | What to extract | How |
+|---|---|---|
+| `publieople/publieople/resume.json` | Stated `positionTitle`, project list, skill tags | `gh api` or `curl raw.githubusercontent.com` |
+| GitHub repos + stars | Actual shipped projects, language depth, what they spend time on | `gh api /users/{name}/repos` |
+| Blog (`blog.for-people.cn`) | Topics they actually write about vs what they claim to be good at | `curl /feed` (NotionNext ships /feed) |
+| **Notion `求职意向` data_source** | The single highest-signal artifact — user's *actual* ranked company list with reasons | `/data_sources/{id}/query` |
+| Notion `大学`, `阅历`, `编程`, `AI`, `大二上 课程` | Course context, hobby/identity tags | search → list data_sources |
+| mem0_search + session_search | Past stated preferences and decisions | before drafting anything |
+
+**Notion API 2025-09 pitfalls when doing this:**
+- `POST /v1/search` `filter.value` MUST be `"data_source"`, not `"database"` (returns 400 otherwise — older tutorials are wrong)
+- Sort + no query = 400. Omit sort if you have no query.
+- 404 on `/data_sources/{id}/query` does NOT mean "doesn't exist" — it means "integration not shared with this database". Try a different data_source.
+
+**Then surface the contradictions directly.** In this user's case, the Notion 求职意向 table contained 28 WLB-first foreign-tech companies (VMware/AWS/NVIDIA/Microsoft/Apple/...) while resume.json said "AI 工具链开发与智能体应用 · 自动化效率工程师". Both are real, but they don't match — and HR will read whichever is on the resume. Don't paper over this with a "best of both worlds" recommendation; ask the user to pick.
+
+Use the **Reconnaissance Report** format when reporting back (see `references/reconnaissance-report-template.md`):
+1. **已确认画像** (identity, skills, projects, honors) — concrete facts only
+2. **求职意向表的真正信号** — what the company list + reasons reveal
+3. **4 个尖锐问题** — explicit mismatches between stated position and inferred direction
+4. **5 个事实问题 (A-E)** — what the user must answer before planning resumes
+
+Only after the user answers the A-E questions does planning begin. Never write a resume, company list, or timeline until intent is aligned.
+
 ## Resume Optimization Rules (from 2026-06-04 session)
 
 When helping the user optimize their resume:
@@ -243,3 +273,5 @@ When helping the user optimize their resume:
 
 - `references/mcp-jobs-deployment.md` — mcp-jobs install, troubleshooting, and MCP integration details
 - `references/tool-details.md` — detailed tool comparisons: mcp-jobs v1.4.0 deps, get_jobs platform limits, JobClaw LLM auth, GeekGeekRun features, environment verification
+- `references/job-tools-landscape.md` — broader auto-apply tool landscape (NEAR agent market, OpenOutreach, MoneyPrinterTurbo, etc.)
+- `references/reconnaissance-report-template.md` — Phase 0 user-intent alignment: 4-source cross-check, 4-section report format, A-E gate questions

@@ -22,6 +22,11 @@ WSL (Windows Subsystem for Linux) 上的开发环境配置与常见陷阱。
 - 从 GitHub release 下载 > 50MB 资产，速度极慢且续传无效
 - 在 WSL 里 `cp` 大文件 / 多文件目录到 `/mnt/c/` `/mnt/e/` 等 Windows NTFS 挂载盘，写入静默失败（目标文件不存在 / size 截断 / cp 进程 exit 0 但目标没生成）
 - 后台进程完成通知里看到 `bash: 无法设定终端进程组 (-1): 对设备不适当的 ioctl 操作` + `此 shell 中无任务控制` → 误以为是失败
+- WSLg daemon 装着（`/tmp/.X11-unix/X0` 在、`/mnt/wslg` 挂载正常）但当前 session 跑 Electron App 时报 `Missing X server or $DISPLAY` + `SIGSEGV`，`$DISPLAY` 空
+- 在 Arch WSL 用 `paru -S <AUR-gui-app>` 装了 Electron GUI App（如 `stably-orca-bin`）但 `command -v <tool>` 找不到 — 包只装 GUI 启动器到 `/opt/<app>/`，没把 `<tool>` CLI 暴露到 PATH（CLI 是 App 运行时通过 IPC 暴露的 bridge，App 不跑就不存在）
+- `npm install -g <pkg>` 看似成功（"changed 1176 packages"），但含原生 binding 的包（better-sqlite3 / sharp / onnxruntime-node / @parcel/watcher / koffi 等）跑不起来 — 因为 npm 11+ 默认 blocked install scripts，需要 `--allow-scripts=<list>` 重装才能编译 native binary
+- `npm install -g <pkg>` 成功后用 systemd user service 启动，发现所有 HTTP 请求都 HTTP 500、journalctl 无错、`~/.X/storage.sqlite` mtime 不变 — **service 文件里写了 `ProtectHome=read-only`**（sandbox 默认值），但该服务要写 `~/.X/`（SQLite / 配置 / OAuth token）
+- 长驻服务（omniroute / 类似 daemon）从 Hermes `terminal(background=true)` 启动后，启动 banner 正常出现但 `curl localhost:port` 拿不到响应（连接被拒），`pgrep` 找不到 PID — sandbox 已 kill 进程
 
 ## SSH 到 fish shell 远端服务器 — `$?` 必踩的坑
 
@@ -235,6 +240,118 @@ terminal(background=true, timeout=1800) java -jar foo.jar > log 2>&1
 # ✅ 前台跑 + 留余量
 timeout 580 java -jar foo.jar > log 2>&1
 # 或直接放后台用 nohup + setsid 完全脱钩（绕过 Hermes）
+```
+
+### 长驻服务的"假装跑通"陷阱 + 真正的 daemonize
+
+服务 banner 出现 ≠ 服务真在跑。诊断流程（关键反模式 vs 正确）：
+
+**反模式（看着像但 sandbox 已 kill）**：
+```bash
+# ❌ banner 出现后以为成功了 — 但 12s 后 curl 报 connection refused
+terminal(background=true, timeout=30) omniroute
+sleep 12; curl http://localhost:20128/v1/models
+# 实际：sandbox 在 sandbox 周期清理时 SIGTERM 掉了，pgrep 不到 PID
+```
+
+**正确诊断**：
+```bash
+# 1. 用 CLI 子命令验证 native binary 加载（不依赖 daemonize）
+omniroute doctor
+#    → 看 "Native binary: better-sqlite3 native binary is compatible"
+#    → 看 "Database: SQLite database not found"（意味着 native binding 没编译）
+
+# 2. 前台短跑 + 重定向（看清 banner 之后实时退出码）
+timeout 15 omniroute > /tmp/omniroute.log 2>&1; echo "exit=$?"
+tail -15 /tmp/omniroute.log
+# exit=124 是 timeout 主动杀的（表示服务跑起来了）
+# exit!=124 是服务自己 crash
+
+# 3. 真正 daemonize 必须在 Hermes 外启动
+```
+
+**真正 daemonize 的 3 种方案**（按推荐度）：
+
+| 方案 | 命令 | 优点 | 缺点 |
+|---|---|---|---|
+| 新开 WSL tab | `omniroute` | 最简单 | 关 tab 就死 |
+| systemd user service | 见下 | 开机自启 / restart on failure | 需 user-level systemd |
+| tmux detached | `tmux new -d -s omniroute 'omniroute'` | 持久化 + 可 attach | 杀 tmux-server 全死 |
+
+systemd unit 模板（用户级，不需要 sudo）— **不要加 sandbox 限制**：
+```ini
+# ~/.config/systemd/user/omniroute.service
+[Unit]
+Description=OmniRoute AI Gateway
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/po/.npm-global/bin/omniroute
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+
+# ⚠️ 不要加 ProtectHome=read-only 或 ProtectSystem=full
+# 任何写 ~/.X/（SQLite / 配置 / OAuth token / hot-reload state）的服务
+# 都会出现：banner 报 "running" + 端口监听 OK + 但任何请求都 HTTP 500
+# journalctl 看不到任何错误，stat ~/.X/storage.sqlite mtime 不变是判定信号
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
+```
+启用：`systemctl --user daemon-reload && systemctl --user enable --now omniroute.service`
+
+**`ProtectHome=read-only` 是静默 500 的元凶**（OmniRoute 真实案例）：看着像好习惯的 sandbox 默认值，启动 5s 报 "running"、监听 20128 OK，但任何 HTTP 请求都 HTTP 500，journalctl 没任何 stack（service 的 stdout 被吃了）。根因：SQLite DB / OAuth token / 配置写 `~/.omniroute/`，read-only home 直接拒写；启动 banner 阶段不写 DB 所以启动 OK，第一个请求触发写入就 fail。**判断**：服务启动后看 `~/.X/storage.sqlite` mtime — 如果启动后没动过就是 write 被拒。
+
+**经验法则**：单机本地代理 / Hermes-style user-mode daemon 都需要 home 可写。`PrivateTmp=true` 保留无害。
+
+## npm 11+ 全局安装：install-scripts 静默被 blocked
+
+**症状**：`npm install -g <pkg>` 输出 "changed 1176 packages in 5m" 看似成功，但运行时报错：
+- `better-sqlite3 native binary was not found`
+- `Error: Could not locate the bindings file`
+- 某些 native-only 功能（SQLite / 图像处理 / ONNX 推理）直接 crash
+
+**根因**：npm 11+ 默认开启 `install-scripts` 保护（PEP-668-like 机制），原生包的 postinstall 脚本被静默跳过 — 包括：
+- `better-sqlite3`、`sharp`、`onnxruntime-node`、`koffi`、`@parcel/watcher`
+- `@swc/core`、`esbuild`、`keytar`、`tls-client-node`
+- `protobufjs`、`core-js`
+- 以及包的 `postinstall`（如 omniroute 自身的 `scripts/build/postinstall.mjs`）
+
+**修复**（重装带 allow-scripts）：
+
+```bash
+# 单次允许（推荐先试）
+npm install -g --allow-scripts=<pkg-name>,better-sqlite3,keytar,tls-client-node,onnxruntime-node,sharp,core-js,esbuild,@parcel/watcher,@swc/core,protobufjs,koffi <pkg-name>
+
+# 或永久配置（针对所有全局安装）
+npm config set allow-scripts=<pkg-name>,better-sqlite3,keytar,tls-client-node,onnxruntime-node,sharp,core-js,esbuild,@parcel/watcher,@swc/core,protobufjs,koffi --location=user
+```
+
+**典型案例**：安装 `omniroute` 后 `omnirroute doctor` 报 `WARN Native binary: better-sqlite3 native binary was not found`，需要上面命令重装。
+
+**判断逻辑**：
+1. `npm install -g` 输出末尾如果有 `npm warn install-scripts N packages had install scripts blocked` → 必须重装
+2. 装完后用 CLI 自带的诊断命令验证：`omniroute doctor` / `claude doctor` / 看启动日志有没有 `native binding` 报错
+3. 千万别只看 `package count changed` 当成功 — 那只是 JS 依赖装齐，native 层还裸着
+
+**诊断清单（安装含原生模块的 npm CLI 后必跑）**：
+```bash
+# 1. CLI 启动？
+<cli> --version
+
+# 2. 加载 native 模块？大多数 CLI 有 doctor / status 子命令
+<cli> doctor
+# 看 native / database / native-binary 行
+
+# 3. 真启动一次前台短跑
+timeout 15 <cli> 2>&1 | head -30
+# exit=124 (timeout kill) = 服务正常启动并 idle
+# exit != 124 = 启动失败，看 stderr
 ```
 
 ## ModelScope 下载
@@ -519,6 +636,104 @@ EOF
 
 要 sudo，你自己粘贴进 WSL 跑。
 
+## WSLg 在跑但 Electron 报 Missing X server / SIGSEGV
+
+**症状**：`$DISPLAY` 空 + `Missing X server or $DISPLAY` + `The platform failed to initialize. Exiting`，有时末尾 SIGSEGV。`/tmp/.X11-unix/X0` 在，`/mnt/wslg` 挂载正常，`cat /mnt/wslg/versions.txt` 能看到版本号。
+
+**根因**：WSLg daemon 起来了，但 systemd user bus 没把 `XDG_RUNTIME_DIR` / `DISPLAY` / `WAYLAND_DISPLAY` / `PULSE_SERVER` 注入到当前 session。**仅靠 socket 文件不够**，shell 必须有这几个 env，Electron / GTK / Qt 才会走 ozone/wayland backend。
+
+**诊断三连**（验证 daemon vs session 注入是两层问题）：
+
+```bash
+# 1. WSLg daemon 在跑？
+ls /tmp/.X11-unix/X0 /mnt/wslg/versions.txt   # 都在 = daemon 活
+cat /mnt/wslg/versions.txt | head -1           # 看版本（1.0.73+ 才稳）
+
+# 2. session 拿到 env 了吗？
+fish -lc 'env | grep -E "DISPLAY|WAYLAND|XDG_RUNTIME|PULSE"'
+bash -lc 'env | grep -E "DISPLAY|WAYLAND|XDG_RUNTIME|PULSE"'
+# 全部空 = 注入断了
+
+# 3. systemd user bus 通吗？
+systemctl --user is-active
+# "Failed to connect to user scope bus via local transport: $DBUS_SESSION_BUS_ADDRESS and $XDG_RUNTIME_DIR not defined"
+# = bus 断了 → env 注入源头断了
+```
+
+**修复（按"最简修法优先"，用户级不改 system）**：
+
+1. **手 export 当前 shell 验证**（确认 fix 方向）：
+
+   ```bash
+   export XDG_RUNTIME_DIR=/run/user/$(id -u)
+   export DISPLAY=:0
+   export WAYLAND_DISPLAY=wayland-0
+   export PULSE_SERVER=unix:/mnt/wslg/PulseServer
+   /opt/<app>/<binary>   # 现在应能拉起 GUI，不再 SIGSEGV
+   ```
+
+2. **持久化到 fish config**（不动 system，不动 `/etc/profile.d/`）：
+
+   ```fish
+   # ~/.config/fish/config.fish
+   set -q XDG_RUNTIME_DIR[1]; or set -gx XDG_RUNTIME_DIR /run/user/(id -u)
+   set -q DISPLAY; or set -gx DISPLAY :0
+   set -q WAYLAND_DISPLAY; or set -gx WAYLAND_DISPLAY wayland-0
+   set -q PULSE_SERVER; or set -gx PULSE_SERVER unix:/mnt/wslg/PulseServer
+   ```
+
+   `set -q ... [1]; or` 模式只在 env 缺失时设置，避免覆盖 WSL 自己的注入（如果以后修了）。
+
+3. **`exit` 重进 fish 生效**。`exec fish` 或关掉 terminal 重开。
+
+**判断 shortcut**：
+
+- `/tmp/.X11-unix/X0` 不存在 → WSLg 没装/没启，重装 `wsl --update` 并重启 WSL
+- 存在但 `$DISPLAY` 空 → 本节问题（session 注入断）
+- 都正常但 App 仍 SIGSEGV → 概率是 Electron 走错 ozone backend，强行 `--ozone-platform=wayland` 或 `--in-process-gpu` 试
+
+**反模式（不要走）**：
+- `sudo tee /etc/profile.d/wslg-env.sh` 改全局 → 用户的硬约束是不自动 sudo
+- `export DISPLAY=:0; export ... ; ./binary` 一行流 → 单次能用，下次进 shell 又没
+- 改 `/etc/wsl.conf` 重启 WSL → 杀 Hermes TUI，得不偿失
+
+## AUR 装 Electron GUI App：CLI 是 IPC bridge，不是独立二进制
+
+**踩坑实记**（用户在 Arch WSL 装 `stably-orca-bin` 后 `command -v orca` 找不到）：
+
+```bash
+$ pacman -Ql stably-orca-bin | grep 'bin/'
+stably-orca-bin /opt/stably-orca/orca-ide              # 主入口（GUI 启动器）
+stably-orca-bin /opt/stably-orca/orca-ide.desktop
+stably-orca-bin /usr/bin/stably-orca                    # 仅 GUI 启动器
+stably-orca-bin /opt/stably-orca/resources/darwin/bin/orca    # macOS 专用
+stably-orca-bin /opt/stably-orca/resources/win32/bin/orca.cmd # Windows 专用
+
+$ command -v orca
+missing
+```
+
+**根因**：AUR 包 = Electron App 预编译 AppImage，只装 GUI 启动器和 `.desktop`。CLI（如 `orca worktree create`、`orca terminal send`）是 App 运行时通过 IPC 暴露的 bridge——**App 不跑 = CLI 不存在**。`resources/darwin/` 和 `resources/win32/` 下的 `orca` 二进制是给那两平台的，Linux 上不适用。
+
+**判断逻辑**：
+1. `pacman -Qi <pkg>` 看装没装
+2. `command -v <cli-name>` 确认 CLI 没暴露到 PATH（**这是预期**）
+3. `pacman -Ql <pkg> | grep -E 'bin/'` 看实际有什么二进制
+4. 启 GUI 验证：手 export WSLg env（见上节）+ `/opt/<app>/<binary>`，确认 App 能拉起 GUI 窗口
+5. App 跑起来后 `orca ...` CLI 才会变可用（IPC 起作用）
+
+**没 GUI 会话就别装**。WSL headless + 无 X 转发 + 无 DISPLAY 时这包完全无用——只能去 `/opt/` 吃灰，触发的所有 skill 触发链都是断的。
+
+**正确判断装哪个**：
+
+| 想用 | 装什么 | WSL 可行？ |
+|---|---|---|
+| GUI + 内部 CLI bridge | AUR `<app>-bin` + WSLg | ✅ 但要先有 WSLg env 注入 |
+| 只用 CLI（脚本化） | 不能用 AUR；Windows 装 `<app>.exe` + `ORCA_CLI_COMMAND` 注入 WSL | ✅ Windows 必须有 |
+| Remote 模式（CLI 管 headless runtime） | AUR `<app>-bin` + `<app> serve` | ⚠️ 新功能，稳定性未知 |
+
+**给 AI 自己的教训**：当 skill 描述里 fire `orca` 这种命令时，**先 verify CLI 在 PATH 上能跑**，再决定要不要 fire。装 skill ≠ 触发链通了。
+
 ## 参考文件
 
 - `references/deepseek-react-patterns.md` — DeepSeek ReAct Agent 在 WSL 下的具体坑
@@ -530,3 +745,4 @@ EOF
 - `references/wsl-to-windows-file-copy.md` — WSL → Windows NTFS 大文件传输的 `cp` 静默截断 + PowerShell SMB 路径（`\\wsl.localhost\<distro>\...`）解法
 - `references/github-release-download.md` — GitHub release 资产下载的 JWT 签名陷阱（续传无效 / WSL 长连接慢）和 gh CLI + 浏览器替代方案
 - `templates/hello_paddle_mnist.py` — 飞桨 3.3.0 兼容的 MNIST 训练模板
+- `scripts/wslg-diagnose.sh` — WSLg daemon vs session env 注入的诊断脚本（daemon 装着但 `$DISPLAY` 空时一键给出 fix 方案）
