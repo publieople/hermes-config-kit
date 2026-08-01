@@ -1,0 +1,17 @@
+[Unit]
+Description=Orca headless serve (WSL)
+After=network-online.target
+
+[Service]
+Environment="PATH=/home/po/.local/bin:/home/po/.npm-global/bin:/home/po/.cargo/bin:/opt/miniforge/condabin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin"
+ExecStart=/home/po/.local/bin/orca-ide serve --port 6768 --json
+StandardOutput=append:/home/po/.orca/serve.log
+StandardError=append:/home/po/.orca/serve.log
+Restart=on-failure
+RestartSec=5
+ProtectSystem=false
+ProtectHome=false
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

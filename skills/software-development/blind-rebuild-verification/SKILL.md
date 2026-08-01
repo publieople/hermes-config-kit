@@ -63,6 +63,40 @@ Structure:
 - **Exit code discipline.** Spec-defined codes (0 success, 2 domain error) must be tested explicitly with `$?`.
 - **Whitelist reuses, don't reinvent.** If `conventions/architecture-rules.md` says `formats.py` is "function defs and a `dict` literal" — use a dict, even if an `if/elif` chain feels Pythonic. Match evidence.
 
+## Subagent Fallback (parent-agent rebuild)
+
+When `delegate_task` fails — MiniMax 429 quota exhaustion, pool timeout at
+max_concurrent_children=1, or model unavailability — the parent agent
+MUST do the rebuild directly rather than retrying the subagent.
+
+**Triggers for fallback:**
+- Subagent returns 429 (Token Plan 用量上限) from MiniMax
+- dispatch timeout after 600s with no output
+- model resolves to a provider with exhausted quota
+
+**Parent-agent rebuild pattern:**
+- Python: write minimal stub modules + implementation via `write_file` using clean string literals (never read_file → write_file)
+- Rust: `cargo init --lib` workspace (trait crate + impl crate), then write src/lib.rs
+- Debug: fix one bug at a time, verify with `python3 -c` or `#[test]` probes
+- Grade: comprehensive test walking every checklist item
+
+## Cross-Language Pitfalls
+
+### Rust + regex-automata
+- `NonMaxUsize` has `.get()` not `usize::from()`
+- `HalfMatch` has `.offset()` returning usize (no Dead/Quit variants in 0.4)
+- `search_captures` returns `()` not `Option` in 0.4
+- `group_info().group_len()` requires `PatternID` argument
+- `RegexBuilder` is a temporary — bind to `let binding` before chaining
+
+## Common Implementation Bugs
+
+- `_exit_buffer` calls `_write_buffer` directly, bypassing `_check_buffer` → quiet flag ignored
+- Buffer saved AFTER flush in `end_capture` → returns empty string
+- Sentinel `NO_CHANGE` values crash `int()` in `update(width=...)`
+- `Style.parse()` doesn't raise on malformed input → `get_style` never falls back to default
+- `read_file` output fed to `write_file` → line number prefixes injected into source files
+
 ## What NOT to capture
 
 - Specific license text you invented for one project — it's a per-spec invention, belongs in the **report** not as a durable rule.
