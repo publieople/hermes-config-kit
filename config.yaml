@@ -166,7 +166,7 @@ bedrock:
 auxiliary:
   vision:
     provider: omniroute
-    model: priority-coding
+    model: minimax-cn/MiniMax-M3
     base_url: http://localhost:20128/v1
     api_key: YOUR_API_KEY
     timeout: 120
@@ -341,11 +341,10 @@ dashboard:
     client_id: ""
     portal_url: ""
   basic_auth:
-    username: ""
-    password_hash: ""
-    password: ""
-    secret: ""
-    session_ttl_seconds: 0
+    username: po
+    password: 5YWWsKueGTUD2amC
+    secret: 87b11ffa567ac9b744571614812f56c73739e063ebd07cd3f07dc22846a97308
+    session_ttl_seconds: 86400
   drain_auth:
     scope: drain
     min_secret_chars: 43
@@ -466,6 +465,10 @@ skills:
   guard_agent_created: false
   write_approval: false
   creation_nudge_interval: 15
+  disabled:
+    - claude-design
+    - codex
+    - himalaya
 curator:
   enabled: true
   interval_hours: 168

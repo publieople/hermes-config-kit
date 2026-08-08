@@ -207,6 +207,10 @@ for t in root.iter(f'{{{NS}}}t'):
 - **电子资源**: add `[J/OL]` or `[M/OL]`, include URL and DOI if available
 - Use 顺序编码制: `[1]` `[2]` in reference list, referenced in text by same numbers
 
+## Chinese Business Document Template
+
+For formal Chinese business/consulting documents (方案, 报告, 规划) with docx-js, see `references/chinese-business-docx-template.md` — proven pattern with cover page, styled headings, tables, headers/footers, and section numbering. Complements the academic template above.
+
 ## Chinese PDF Reading Fallback
 
 When `pdftotext` or `pypdf` fail to extract Chinese text from a PDF (common with scanned/image-based PDFs):

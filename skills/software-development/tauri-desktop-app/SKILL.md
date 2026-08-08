@@ -178,6 +178,13 @@ pnpm tauri android build
 4. **WSL2 下 Tauri dev 需要 `sudo pacman -S xdotool webkit2gtk-4.1`**
 5. **Windows 交叉编译从 WSL2** — 推荐直接用 Windows 侧 Rust 构建，或 CI
 6. **npm 11 的 devDependencies bug** — 如果受影响，全部移到 dependencies
+7. **产物版本号** — tauri.conf.json 的 `version` 写死不跟 tag 走。解决方案：release workflow 用 `python3` 从 `${{ github.ref_name }}` 提取版本号（`${TAG#v}` → `0.1.1`）替换 `Cargo.toml` 的 workspace version 和 `tauri.conf.json` 的 version 字段。产物上传用 `*.exe`/`*.msi` 通配符。
+8. **bundle resources** — `bundle.resources` 映射是 `源路径 -> 安装目录文件名`（扁平）。CI gui job 的 `cargo check` 会校验 resources 存在性 → 必须先构建 CLI+helper。`beforeBuildCommand` 用 `--manifest-path ../Cargo.toml` 跨独立 workspace 共享 target。
+9. **`gh release create` 必须 checkout** — publish job 需要 `actions/checkout@v4`（fetch-depth: 0）提供 git 仓库上下文，否则 `gh release create` 报 `fatal: not a git repository`。
+10. **artifact download 保留目录结构** — `actions/download-artifact` 下载后文件名不是扁平的（`installer/gui/src-tauri/...`），用 `find installer -type f` 收集文件，**不要用 glob** 猜 `installer/*.exe`。
+11. **CSS 暗色模式** — CSS 自定义属性挂在 `<div>` 上无法被 `html`/`body` 继承（body 在 div 外层）。必须挂到 `:root`（`document.documentElement.style.setProperty`），用 `watch` + `immediate: true` 同步。
+7. **产物版本号** — tauri.conf.json 的 `version` 写死不跟 tag 走。解决方案：release workflow 用 `python3` 从 `${{ github.ref_name }}` 提取版本号替换两个文件的 version 字段。产物上传用 `*.exe`/`*.msi` 通配符。
+8. **bundle resources** — `bundle.resources` 映射是 `源路径 -> 安装目录文件名`（扁平）。CI gui job 的 `cargo check` 会校验 resources 存在性 → 必须先构建 CLI+helper。`beforeBuildCommand` 用 `--manifest-path ../Cargo.toml` 跨独立 workspace 共享 target。
 
 ## 设置持久化
 

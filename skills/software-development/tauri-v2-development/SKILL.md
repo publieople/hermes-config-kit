@@ -212,6 +212,61 @@ pnpm install
 npm install
 ```
 
+### pnpm 11: onlyBuiltDependencies moved to pnpm-workspace.yaml
+
+pnpm 11 no longer reads the `pnpm.onlyBuiltDependencies` field in package.json (prints `[WARN] The "pnpm" field in package.json is no longer read`). Build scripts for esbuild / @tauri-apps/cli get silently blocked (`ERR_PNPM_IGNORED_BUILDS`), leaving `node_modules/.bin/esbuild` missing and vite build failing.
+
+**Fix** — `pnpm-workspace.yaml` at the pnpm working dir:
+
+```yaml
+allowBuilds:
+  esbuild: true
+  '@tauri-apps/cli': true
+```
+
+Then `rm -rf node_modules && pnpm install`. If it still blocks, `pnpm rebuild esbuild` runs the postinstall manually and fixes the binary (esbuild lives in the pnpm store; the `.bin` symlink being missing is cosmetic — vite finds it via the store).
+
+### Tauri src-tauri inside a Rust workspace: append `[workspace]` to isolate
+
+If the repo root has its own Cargo.toml workspace (e.g. `crates/core` + `crates/cli`), cargo treats `gui/src-tauri/` as a member and errors:
+
+```
+error: current package believes it's in a workspace when it's not:
+current:   /repo/gui/src-tauri/Cargo.toml
+workspace: /repo/Cargo.toml
+```
+
+**Fix**: append an empty `[workspace]` table to `gui/src-tauri/Cargo.toml` — declares it an independent workspace, keeps tauri-build's dependency tree separate from the root. Then path-depend on the core crate (`bootkeeper-core = { path = "../../crates/core" }`).
+
+### Cross-compiling src-tauri on WSL: llvm-rc missing, use CI instead
+
+`cargo check --target x86_64-pc-windows-msvc` in src-tauri fails at the tauri-build build script:
+
+```
+thread 'main' panicked at tauri-winres: NotAttempted("llvm-rc")
+```
+
+WSL lacks the Windows resource compiler. **Environment limit, not code** — CI's windows-latest runner has full MSVC + rc.exe. Add a dedicated `gui` job:
+
+```yaml
+gui:
+  runs-on: windows-latest
+  defaults: { run: { working-directory: gui } }
+  steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: pnpm/action-setup@v4
+      with: { version: 11 }
+    - uses: actions/setup-node@v4
+      with: { node-version: 22, cache: pnpm, cache-dependency-path: gui/pnpm-lock.yaml }
+    - run: pnpm install --frozen-lockfile
+    - run: pnpm build
+    - run: cargo check
+      working-directory: gui/src-tauri
+```
+
+Make sure `.gitignore` covers `gui/src-tauri/target` (root `/target` pattern only matches the root dir).
+
 ## Key Pitfalls
 
 ### 1. Permission must be explicitly added
@@ -306,6 +361,110 @@ When toggling a preview window (show/hide via hotkey or tray):
 - Track visibility in Rust state: `Mutex<bool>` or `AtomicBool`
 - Use `window.is_visible()` to check current state
 - Use `window.show()` / `window.hide()` plus `.set_focus()` when showing
+
+### 12. Bundling external binaries as resources (CLI + helper pattern)
+
+When the app ships sidecar binaries (CLI, elevated helper) that Rust code invokes at runtime:
+
+1. **tauri.conf.json** `bundle.resources` maps them into the installer:
+```json
+"bundle": {
+  "resources": {
+    "resources/bootkeeper.exe": "bootkeeper.exe",
+    "resources/bootkeeper-helper.exe": "bootkeeper-helper.exe"
+  }
+}
+```
+2. **beforeBuildCommand** must build them BEFORE the Tauri build, then copy into `src-tauri/resources`:
+```json
+"beforeBuildCommand": "pnpm build && cargo build --release -p bootkeeper-cli -p bootkeeper-helper && node scripts/prepare-resources.mjs"
+```
+3. **prepare-resources.mjs path trap**: output MUST be `gui/src-tauri/resources` (where tauri.conf's `resources/` resolves from — relative to `src-tauri/`), NOT `gui/scripts/resources`. Source is the workspace root `target/release`. Wrong output dir = `resource path 'resources\bootkeeper.exe' doesn't exist` at build script time.
+4. **CI gui job must build before `cargo check`**: tauri.conf references resources, so a bare `cargo check` fails with "resource path doesn't exist" unless the CLI+helper were compiled first:
+```yaml
+- run: cargo build --release -p bootkeeper-cli -p bootkeeper-helper
+  working-directory: .
+- run: node scripts/prepare-resources.mjs
+- run: cargo check
+  working-directory: gui/src-tauri
+```
+5. **Runtime helper discovery**: bundled install = `bootkeeper-helper.exe` next to the GUI exe; dev mode = walk up to repo root and check `target/{release,debug}` and `src-tauri/target/{release,debug}`. Allow `BOOTKEEPER_HELPER` env override. (`current_exe().parent()` is the installer root where resources land.)
+6. `.gitignore` must cover `src-tauri/resources` (generated artifacts).
+
+### 13. Release workflow with version auto-injection
+
+Tauri reads the product version from `tauri.conf.json` (and `Cargo.toml`). If these are hardcoded (`"0.1.0"`), every release produces the same filename. Use a CI step that extracts the semver from the git tag and injects it before `pnpm tauri build`:
+
+```yaml
+- name: Set version from git tag
+  shell: bash
+  working-directory: .   # repo root — Cargo.toml is here, not under gui/
+  env:
+    VER: ${{ github.ref_name }}
+  run: |
+    VER="${VER#v}"   # v0.1.1 -> 0.1.1
+    python3 -c "
+    import os, re, json
+    v = os.environ['VER']
+    c = open('Cargo.toml').read()
+    c = re.sub(r'^version\s*=\s*\"[^\"]+\"', f'version = \"{v}\"', c, count=1, flags=re.M)
+    open('Cargo.toml', 'w').write(c)
+    d = json.load(open('gui/src-tauri/tauri.conf.json'))
+    d['version'] = v
+    open('gui/src-tauri/tauri.conf.json', 'w').write(json.dumps(d, indent=2) + '\n')
+    "
+```
+
+After injection, `pnpm tauri build` produces `BootKeeper_0.1.1_x64-setup.exe` matching the tag.
+Key detail: this step runs at repo root (`working-directory: .`), NOT under `gui/`.
+
+### 14. Cross-privilege data directory (elevated helper pattern)
+
+When the app spawns an elevated helper process (`ShellExecuteW runas`), the helper runs under a **different user profile** (admin). `%APPDATA%` in the helper resolves to `C:\Windows\System32\config\systemprofile\AppData\Roaming`, NOT the user's AppData. Temp files written via APPDATA by the non-elevated app are invisible to the helper.
+
+Fix: use `%ProgramData%` (machine-wide, all-privilege, always the same path):
+
+```rust
+pub fn data_root() -> PathBuf {
+    if let Ok(p) = std::env::var("MYAPP_DATA") { return PathBuf::from(p); }
+    let base = std::env::var("ProgramData")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("C:\\ProgramData"));
+    base.join("MyApp")
+}
+```
+
+Request files and results pass via absolute paths in argv, so they survive the elevation boundary — but snapshot stores, temp dirs, and any persistent state that BOTH processes access must live under ProgramData.
+
+### 15. MSI target rejects semver pre-release identifiers
+
+Tauri v2's MSI bundler enforces numeric-only version components. Semver pre-release labels crash the build:
+
+```
+failed to bundle project: `optional pre-release identifier in app version must be numeric-only and cannot be greater than 65535 for msi target`
+```
+
+- ❌ `0.2.2-pre`, `0.2.2-alpha`, `0.2.2-beta.1` — all rejected.
+- ✅ `0.2.2`, `0.2.2.1` (4-component numeric) — accepted.
+
+If you need a pre-release build, use a 4-part numeric version (`0.2.2.1`, `0.2.2.2`) instead of a semver pre-release tag. The version-injection step already strips leading `v` — but the tag itself must have no `-` segments.
+
+### 16. beforeBuildCommand and CI: `--manifest-path` for workspace-dependent crates
+
+When `src-tauri` is its own workspace, the beforeBuildCommand runs inside `gui/` where root-workspace crate names aren't visible. Use `--manifest-path`:
+
+```json
+"beforeBuildCommand": "pnpm build && cargo build --release --manifest-path ../Cargo.toml -p cli -p helper && node scripts/prepare-resources.mjs"
+```
+
+CI's `build-windows` job with `defaults: { run: { working-directory: gui } }` needs its pre-build step at repo root:
+
+```yaml
+- run: cargo build --release -p cli -p helper
+  working-directory: .
+- run: node gui/scripts/prepare-resources.mjs
+  working-directory: .
+```
 
 ## WSL2 Development Notes
 
