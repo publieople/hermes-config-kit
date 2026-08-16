@@ -19,6 +19,7 @@ WSL (Windows Subsystem for Linux) 上的开发环境配置与常见陷阱。
 - 在 WSL 内运行 tmux / 任何常驻进程，需要"清干净"做验证
 - 从 Windows PowerShell 一行启动 WSL 里安装的 CLI（hermes / claude / codex 等），报"未找到命令"、"no API keys"、或"先进入 fish / 卡在 PS1 才执行命令"
 - 在 WSL 里跑 > 60s 的 JVM / 构建任务，`terminal(background=true)` 起来后秒退
+- 在 WSL 里 `docker compose up -d` 后台跑完 action=log 只看到 ioctl 警告、不知道容器起没起；或 background shell 里 `cd /path && docker compose ...` 静默失败
 - 从 GitHub release 下载 > 50MB 资产，速度极慢且续传无效
 - 在 WSL 里 `cp` 大文件 / 多文件目录到 `/mnt/c/` `/mnt/e/` 等 Windows NTFS 挂载盘，写入静默失败（目标文件不存在 / size 截断 / cp 进程 exit 0 但目标没生成）
 - 后台进程完成通知里看到 `bash: 无法设定终端进程组 (-1): 对设备不适当的 ioctl 操作` + `此 shell 中无任务控制` → 误以为是失败
@@ -182,7 +183,44 @@ uv python install 3.12
 uv venv --python 3.12 /home/po/.venvs/<name>
 ```
 
-## Vite/Node 开发服务器：Windows 浏览器访问
+### Docker Compose `up -d` 后台：输出全丢 + cwd 不续
+
+**症状**：`terminal(background=true, notify_on_complete=true)` 跑 `docker compose up -d`，process 几秒后 exit_code=0，但 `process action=log` 只能看到两行 ioctl 警告，**compose 的真实 stdout/stderr（拉镜像、构建、起容器）一个字节都看不见**。你不知道是拉镜像失败还是构建报错——只能再 `docker compose ps` 看容器在不在。浪费 2-3 轮排错。
+
+**根因（两个叠加）**：
+
+1. Hermes 后台 wrapper 的 tty/sandbox 把 compose 的 stdout/stderr 完全吞掉，只剩 bash 自己的 ioctl 警告
+2. background process **不续 cwd** — 同一个 session 里前面 `cd /home/po/x` 成功后，后面 `terminal(background=true) cd /home/po/x && docker compose up -d` 会因 cd 静默失败而找不到 yml，但整个命令链 exit 0 不报错
+
+**正确写法（**首选 tee 法**）**：
+
+```bash
+# ✅ A. 前台 + tee —— `compose up -d` detached 后立即返回(几秒)，不触发 long-lived 警告
+#    (整个 build 拉镜像输出仍写 file，但 fg 进程早就退了 —— fg 进程在 compose detached 时已经退出)
+cd /home/po/mediary-scout && docker compose up -d 2>&1 | tee /tmp/ms-up.log; echo "exit=$?"
+
+# ✅ B. 后台但用 --project-directory 不依赖 cwd,跑完只看 exit_code 不读 action=log
+docker compose --project-directory /home/po/mediary-scout -f /home/po/mediary-scout/docker-compose.yml up -d
+# 验真:
+docker compose --project-directory /home/po/mediary-scout -f /home/po/mediary-scout/docker-compose.yml ps
+
+# ✅ C. 真要看 build 详细日志？前台跑 `compose build`(不带 -d),看 build 实时输出
+docker compose --project-directory /home/po/mediary-scout -f /home/po/mediary-scout/docker-compose.yml build
+```
+
+**反模式**：
+
+```bash
+# ❌ 后台跑,想靠 action=log 看输出 —— 啥也没有,误以为失败
+terminal(background=true) docker compose up -d
+
+# ❌ background 里靠 cd 切目录 —— cwd 不续,失败静默,exit 0
+terminal(background=true) cd /home/po/mediary-scout && docker compose up -d
+```
+
+**判断快捷**：后台跑完 `compose up -d` 立刻 `compose ps` —— 有容器 Running/Healthy = 跑通了，没容器 = 哪步出错，重跑 fg + tee 看 log。
+
+### Vite/Node 开发服务器：Windows 浏览器访问
 
 WSL 中启动的 Vite dev server 在 Windows 浏览器可能无法访问。
 

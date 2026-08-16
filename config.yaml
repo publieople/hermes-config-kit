@@ -6,6 +6,41 @@ providers:
   omniroute:
     base_url: http://localhost:20128/v1
     api_key: YOUR_API_KEY
+  minimax-cn:
+    name: MiniMax · Token Plan
+    base_url: https://api.minimaxi.com/anthropic
+    api_mode: anthropic_messages
+    transport: anthropic_messages
+    model: MiniMax-M3
+    models:
+      MiniMax-M3:
+        context_length: 1000000
+        supports_tools: true
+        supports_reasoning: true
+      MiniMax-M2.7:
+        context_length: 204800
+        supports_tools: true
+        supports_reasoning: true
+      MiniMax-M2.7-highspeed:
+        context_length: 204800
+        supports_tools: true
+        supports_reasoning: true
+      MiniMax-M2.5:
+        context_length: 204800
+        supports_tools: true
+      MiniMax-M2.5-highspeed:
+        context_length: 204800
+        supports_tools: true
+      MiniMax-M2.1:
+        context_length: 204800
+        supports_tools: true
+      MiniMax-M2.1-highspeed:
+        context_length: 204800
+        supports_tools: true
+      MiniMax-M2:
+        context_length: 204800
+        supports_tools: true
+    api_key: YOUR_API_KEY
 fallback_providers: []
 toolsets:
   - hermes-cli
@@ -64,6 +99,7 @@ terminal:
   singularity_image: docker://nikolaik/python-nodejs:python3.11-nodejs20
   modal_image: nikolaik/python-nodejs:python3.11-nodejs20
   daytona_image: nikolaik/python-nodejs:python3.11-nodejs20
+  vercel_runtime: node24
   container_cpu: 1
   container_memory: 5120
   container_disk: 51200
@@ -73,7 +109,6 @@ terminal:
   docker_extra_args: []
   docker_run_as_host_user: false
   persistent_shell: true
-  vercel_runtime: node24
   lifetime_seconds: 300
 web:
   backend: tavily
@@ -135,17 +170,6 @@ compression:
   abort_on_summary_failure: false
   codex_gpt55_autoraise: true
   in_place: true
-kanban:
-  dispatch_in_gateway: true
-  dispatch_interval_seconds: 60
-  failure_limit: 2
-  worker_log_rotate_bytes: 2097152
-  worker_log_backup_count: 1
-  orchestrator_profile: ""
-  default_assignee: ""
-  auto_decompose: true
-  auto_decompose_per_tick: 3
-  dispatch_stale_timeout_seconds: 14400
 prompt_caching:
   cache_ttl: 5m
 openrouter:
@@ -569,6 +593,17 @@ cron:
   wrap_response: true
   mirror_delivery: false
   output_retention: 50
+kanban:
+  dispatch_in_gateway: true
+  dispatch_interval_seconds: 60
+  failure_limit: 2
+  worker_log_rotate_bytes: 2097152
+  worker_log_backup_count: 1
+  orchestrator_profile: ""
+  default_assignee: ""
+  auto_decompose: true
+  auto_decompose_per_tick: 3
+  dispatch_stale_timeout_seconds: 14400
 code_execution:
   mode: project
   timeout: 300
@@ -740,13 +775,13 @@ custom_providers:
       - claude-opus-4-7
       - claude-opus-4-6
       - claude-opus-4-5
-      - claude-opus-4-1
       - claude-sonnet-5
       - claude-sonnet-4-6
       - claude-sonnet-4-5
       - claude-sonnet-4
       - claude-haiku-4-5
       - gemini-3.6-flash
+      - gemini-3.7-flash
       - gemini-3.5-flash-lite
       - gemini-3.5-flash
       - gemini-3.1-pro
@@ -772,6 +807,7 @@ custom_providers:
       - gpt-5-codex
       - gpt-5-nano
       - grok-build-0.1
+      - grok-4.6
       - grok-4.5
       - deepseek-v4-pro
       - deepseek-v4-flash
@@ -781,6 +817,7 @@ custom_providers:
       - minimax-m3
       - minimax-m2.7
       - minimax-m2.5
+      - kimi-k3
       - kimi-k2.7-code
       - kimi-k2.6
       - kimi-k2.5
@@ -789,9 +826,9 @@ custom_providers:
       - big-pickle
       - deepseek-v4-flash-free
       - mimo-v2.5-free
-      - ling-3.0-flash-free
+      - hy3-free
       - nemotron-3-ultra-free
-      - north-mini-code-free
+      - nemotron-3.5-lightning-free
       - laguna-s-2.1-free
 FEISHU_HOME_CHANNEL: YOUR_FEISHU_CHANNELcfb2
 mcp_servers:
