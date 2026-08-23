@@ -809,6 +809,7 @@ custom_providers:
       - grok-build-0.1
       - grok-4.6
       - grok-4.5
+      - muse-spark-1.2
       - deepseek-v4-pro
       - deepseek-v4-flash
       - glm-5.2
@@ -868,6 +869,16 @@ mcp_servers:
     url: http://YOUR_IP_REPLACED:3927/mcp
     headers:
       Authorization: Bearer YOUR_BEARER_TOKEN
+    enabled: true
+  open-design:
+    command: /usr/bin/node
+    args:
+      - /home/po/tools/open-design/apps/daemon/dist/cli.js
+      - mcp
+      - --daemon-url
+      - http://YOUR_IP_REPLACED:7456
+    env:
+      OD_DATA_DIR: /home/po/tools/open-design/.od
     enabled: true
 known_plugin_toolsets:
   napcat:
