@@ -296,7 +296,7 @@ auxiliary:
     max_concurrency: 3
 display:
   compact: false
-  personality: kawaii
+  personality: ""
   resume_display: full
   resume_exchanges: 10
   resume_max_user_chars: 300
@@ -356,7 +356,7 @@ display:
     scale: 0.33
     unicode_cols: 0
   tool_progress: all
-  background_process_notifications: all
+  background_process_notifications: concise
   mouse_tracking: true
 dashboard:
   theme: default
@@ -454,10 +454,10 @@ delegation:
   api_key: YOUR_API_KEY
   api_mode: ""
   inherit_mcp_toolsets: true
-  max_iterations: 50
+  max_iterations: 250
   child_timeout_seconds: 600
   reasoning_effort: ""
-  max_concurrent_children: 3
+  max_concurrent_children: 10
   max_spawn_depth: 1
   orchestrator_enabled: true
   subagent_auto_approve: false
@@ -685,7 +685,7 @@ paste_collapse_threshold_fallback: 5
 paste_collapse_char_threshold: 2000
 computer_use:
   cua_telemetry: false
-_config_version: 33
+_config_version: 39
 session_reset:
   mode: none
   idle_minutes: 1440
@@ -826,6 +826,8 @@ custom_providers:
       - qwen3.5-plus
       - big-pickle
       - deepseek-v4-flash-free
+      - x-preview-f-free
+      - muse-spark-1.2-contributor-free
       - mimo-v2.5-free
       - hy3-free
       - nemotron-3-ultra-free

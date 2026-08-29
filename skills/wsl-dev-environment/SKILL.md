@@ -28,6 +28,7 @@ WSL (Windows Subsystem for Linux) 上的开发环境配置与常见陷阱。
 - `npm install -g <pkg>` 看似成功（"changed 1176 packages"），但含原生 binding 的包（better-sqlite3 / sharp / onnxruntime-node / @parcel/watcher / koffi 等）跑不起来 — 因为 npm 11+ 默认 blocked install scripts，需要 `--allow-scripts=<list>` 重装才能编译 native binary
 - `npm install -g <pkg>` 成功后用 systemd user service 启动，发现所有 HTTP 请求都 HTTP 500、journalctl 无错、`~/.X/storage.sqlite` mtime 不变 — **service 文件里写了 `ProtectHome=read-only`**（sandbox 默认值），但该服务要写 `~/.X/`（SQLite / 配置 / OAuth token）
 - 长驻服务（omniroute / 类似 daemon）从 Hermes `terminal(background=true)` 启动后，启动 banner 正常出现但 `curl localhost:port` 拿不到响应（连接被拒），`pgrep` 找不到 PID — sandbox 已 kill 进程
+- WSL 里 `systemctl start sshd` 失败、前台 `sshd -D -d` 报 `Bind to port 22 ... Address already in use`，但 WSL 内 `ss -tlnp | grep :22` 和 `ps aux | grep sshd` 都为空 — Windows 宿主 OpenSSH Server 占 22，经 WSL2 localhost 转发幽灵占用
 
 ## SSH 到 fish shell 远端服务器 — `$?` 必踩的坑
 
@@ -772,8 +773,31 @@ missing
 
 **给 AI 自己的教训**：当 skill 描述里 fire `orca` 这种命令时，**先 verify CLI 在 PATH 上能跑**，再决定要不要 fire。装 skill ≠ 触发链通了。
 
+## WSL sshd 绑 22 失败：Windows 宿主的幽灵占用
+
+**症状**：`systemctl start sshd` 反复失败（最后 `start-limit-hit`），前台 `sudo /usr/sbin/sshd -D -d` 报 `Bind to port 22 on 0.0.0.0 failed: Address already in use`——但 WSL 里 `ss -tlnp | grep :22` 和 `ps aux | grep sshd` **都为空**。
+
+**根因**：Windows 宿主跑着 OpenSSH Server 占 22。WSL2 的 localhost 转发机制让 Windows 的 22 在 WSL 里表现为"已占用"，但占用进程不在 WSL 的网络命名空间里，所以 WSL 的 `ss`/`ps` 看不见。**`ssh localhost` 会连到 Windows 的 sshd 而不是 WSL 的**。
+
+**验证方法（指纹比对）**：先 `sudo ssh-keygen -A` 后 `ssh localhost`，比对返回的 host key 指纹和你刚生成的 `/etc/ssh/ssh_host_ed25519_key.pub` 指纹——不一致即实锤连到了别的 sshd。
+
+**修法（推荐换端口，不动宿主）**：
+
+```bash
+echo 'Port 2222' | sudo tee -a /etc/ssh/sshd_config
+sudo systemctl reset-failed sshd   # 清 start-limit-hit 熔断
+sudo systemctl restart sshd
+sudo ss -tlnp | grep 2222          # 确认 LISTEN
+ssh -p 2222 localhost              # 指纹应匹配 WSL 的 host key
+```
+
+**为什么不动 Windows 侧**：关宿主 OpenSSH Server 可能影响其他用途，换端口一行配置就绕过。
+
+**systemd 反复失败后的熔断**：journalctl 里只看到 `start-limit-hit` 而看不到真实错误时，真实原因已被刷掉——先 `sudo /usr/sbin/sshd -D -d` 前台跑看首行报错，再 `systemctl reset-failed` 清熔断重试。
+
 ## 参考文件
 
+- `references/uu-remote-ssh-tunnel.md` — UU 远程端口映射 → WSL sshd 的完整方案（FRP 替代，含端口选择理由和迁移判断）
 - `references/deepseek-react-patterns.md` — DeepSeek ReAct Agent 在 WSL 下的具体坑
 - `references/deepseek-api-patterns.md` — DeepSeek API 的 ReAct/Function Calling 坑和写法（从 wsl-python-development 合并）
 - `references/mcp-fastmcp-api.md` — MCP FastMCP 三种传输协议的现行 API（从 wsl-python-development 合并）

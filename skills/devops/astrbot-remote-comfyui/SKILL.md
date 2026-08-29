@@ -9,6 +9,8 @@ description: 将 AstrBot 连接到远程 ComfyUI 服务器 — SSH 隧道、syst
 
 AstrBot 装在 WSL/本地，ComfyUI 在远程服务器（无公网 IP，通过 FRP/SSH 访问）。
 
+**访问路径可换**：FRP / SSH 可换成网易 UU 远程端口映射（TCP-only，经跳板机进内网，省 FRP 流量）。整条迁移 + WSL sshd 换端口 + UU 掉线坑见 `references/uu-remote-tunnel.md`。
+
 ## 方案
 
 ### 1. SSH 隧道（核心）
