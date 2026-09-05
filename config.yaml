@@ -1,11 +1,11 @@
 model:
-  default: priority-coding
-  provider: omniroute
-  base_url: http://localhost:20128/v1
+  default: opencode-go/glm-5.3-flash
+  provider: custom:omniroute
 providers:
   omniroute:
     base_url: http://localhost:20128/v1
     api_key: YOUR_API_KEY
+    default_model: opencode-go/glm-5.3-flash
   minimax-cn:
     name: MiniMax · Token Plan
     base_url: https://api.minimaxi.com/anthropic
@@ -195,12 +195,6 @@ auxiliary:
     api_key: YOUR_API_KEY
     timeout: 120
     download_timeout: 30
-  web_extract:
-    provider: auto
-    model: ""
-    base_url: ""
-    api_key: YOUR_API_KEY
-    timeout: 360
   compression:
     provider: auto
     model: ""
@@ -286,6 +280,12 @@ auxiliary:
     base_url: ""
     api_key: YOUR_API_KEY
     timeout: 600
+  web_extract:
+    provider: auto
+    model: ""
+    base_url: ""
+    api_key: YOUR_API_KEY
+    timeout: 360
   session_search:
     provider: auto
     model: ""
@@ -311,6 +311,7 @@ display:
   show_reasoning: false
   reasoning_full: false
   memory_notifications: true
+  background_process_notifications: concise
   streaming: true
   timestamps: false
   final_response_markdown: strip
@@ -356,7 +357,6 @@ display:
     scale: 0.33
     unicode_cols: 0
   tool_progress: all
-  background_process_notifications: concise
   mouse_tracking: true
 dashboard:
   theme: default
@@ -412,7 +412,6 @@ tts:
   use_gateway: false
 stt:
   enabled: true
-  provider: local
   local:
     model: base
     language: ""
@@ -425,6 +424,7 @@ stt:
     language_code: ""
     tag_audio_events: false
     diarize: false
+  provider: local
 voice:
   record_key: ctrl+b
   max_recording_seconds: 120
@@ -444,8 +444,8 @@ memory:
   write_approval: false
   memory_char_limit: 2200
   user_char_limit: 1375
-  provider: mem0
   nudge_interval: 10
+  provider: mem0
   flush_min_turns: 6
 delegation:
   model: priority-coding
@@ -569,6 +569,25 @@ command_allowlist:
   - recursive delete
   - overwrite system file via redirection
   - script execution via -e/-c flag
+plugins:
+  enabled:
+    - evey-digest
+    - evey-goals
+    - evey-habits
+    - evey-learner
+    - herdr-agent-state
+    - orca-status
+    - ponytail
+  disabled: []
+  entries:
+    evey-learner:
+      allow_tool_override: false
+    evey-digest:
+      allow_tool_override: false
+    evey-goals:
+      allow_tool_override: false
+    evey-habits:
+      allow_tool_override: false
 hooks_auto_accept: false
 security:
   allow_private_urls: false
@@ -624,7 +643,6 @@ logging:
 model_catalog:
   enabled: true
   url: https://hermes-agent.nousresearch.com/docs/api/model-catalog.json
-  ttl_hours: 1
 network:
   force_ipv4: false
 gateway:
@@ -685,7 +703,7 @@ paste_collapse_threshold_fallback: 5
 paste_collapse_char_threshold: 2000
 computer_use:
   cua_telemetry: false
-_config_version: 39
+_config_version: 40
 session_reset:
   mode: none
   idle_minutes: 1440
@@ -899,24 +917,5 @@ known_plugin_toolsets:
     - spotify
 napcat:
   require_mention: true
-plugins:
-  enabled:
-    - evey-digest
-    - evey-goals
-    - evey-habits
-    - evey-learner
-    - herdr-agent-state
-    - orca-status
-    - ponytail
-  disabled: []
-  entries:
-    evey-learner:
-      allow_tool_override: false
-    evey-digest:
-      allow_tool_override: false
-    evey-goals:
-      allow_tool_override: false
-    evey-habits:
-      allow_tool_override: false
 clarify:
   timeout: 3600
