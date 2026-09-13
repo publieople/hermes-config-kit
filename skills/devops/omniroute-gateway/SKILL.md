@@ -25,6 +25,8 @@ This skill captures the **operational** knowledge needed to install OmniRoute, e
 - "switch Hermes default to OmniRoute"
 - "set up an AI gateway / LLM router"
 - Troubleshooting MCP connection failures to localhost:20128
+- **"opencode-go 400 MissingSessionID / x-opencode-session"** — opencode.ai 自 2026-09-06 强制该头；3.8.49 默认只透传不合成，**3.8.50 起默认合成**（`OPENCODE_SYNTHESIZE_CLI_HEADERS` 反转为 opt-out）。升级到 ≥3.8.50 即修复，勿设 false。
+- **npm 自更新跳过 install scripts** — `npm install -g omniroute@latest` 报 "install scripts not yet covered by allowScripts"（better-sqlite3 等 native 包静默跳过 → 500）。重跑带完整 allow-scripts CSV，再 `omniroute doctor` 验证 native binary OK。
 - **"omniroute.service restarting loop" / "exit-code 203 EXEC"** — unit pointing at wrong binary path
 - **"AppImage / AUR omniroute-bin failed" / "sqlite driver unavailable on AppImage"**
 - **"Missing X server or $DISPLAY" / "platform failed to initialize"** in omniroute service log
