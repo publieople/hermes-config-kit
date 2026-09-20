@@ -207,7 +207,7 @@ def scan_skill_descriptions(skill_dir):
 def find_all_skills(base_dir):
     """递归查找所有 user-created SKILL.md 文件"""
     results = []
-    exclude = {"hermes", "mcp", "_archive"}
+    exclude = {"hermes", "mcp", "_archive", ".archive"}
     for root, dirs, files in os.walk(base_dir):
         root_path = Path(root)
         rel = root_path.relative_to(base_dir)
@@ -221,6 +221,19 @@ def find_all_skills(base_dir):
             mtime = datetime.fromtimestamp(skill_file.stat().st_mtime, tz=timezone.utc)
             results.append((str(rel), mtime))
     return results
+
+
+def _bundled_skill_names() -> set:
+    """Bundled 技能由 tools/skills_sync 在 gateway 启动时从 _archive 还原回原位，
+    mv 归档对它们无效（agent.log: 'Relocated renamed bundled skill'），不能列为归档候选。"""
+    manifest = SKILLS_DIR / ".bundled_manifest"
+    if not manifest.exists():
+        return set()
+    return {
+        line.split(":", 1)[0].strip()
+        for line in manifest.read_text(encoding="utf-8").splitlines()
+        if ":" in line
+    }
 
 
 def maintain_skills():
@@ -239,11 +252,16 @@ def maintain_skills():
         )
     
     # 检查归档候选（60天未修改）
+    bundled = _bundled_skill_names()
     archive_candidates = []
+    bundled_candidates = []
     for name, mtime in user_skills:
         age_days = (now - mtime).days
         if age_days >= SKILL_ARCHIVE_DAYS:
-            archive_candidates.append((name, age_days, mtime))
+            if Path(name).name in bundled:
+                bundled_candidates.append((name, age_days, mtime))
+            else:
+                archive_candidates.append((name, age_days, mtime))
     
     skills_report["archive_candidates"] = len(archive_candidates)
     if archive_candidates:
@@ -253,6 +271,15 @@ def maintain_skills():
         )
         if len(archive_candidates) > 10:
             report["recommendations"][-1] += f"\n  ... 及其他 {len(archive_candidates) - 10} 个"
+
+    # bundled 技能不能靠 mv 归档（skills_sync 会还原），只能从 skills.disabled 里隐身
+    skills_report["bundled_candidates"] = len(bundled_candidates)
+    if bundled_candidates:
+        report["recommendations"].append(
+            f"以下 {len(bundled_candidates)} 个 bundled 技能超期但不可归档（归档会被 skills_sync 还原）：\n" +
+            "\n".join(f"  - {name}（{days} 天）" for name, days, _ in bundled_candidates[:10]) +
+            "\n  处理方式：加到 config.yaml 的 skills.disabled（不可用则忽略）"
+        )
     
     # 扫描 description 检测潜在重复
     skill_infos = []
