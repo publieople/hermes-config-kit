@@ -514,6 +514,7 @@ skills:
   disabled:
     - notion
     - apple-reminders
+    - codex
 curator:
   enabled: true
   interval_hours: 168
