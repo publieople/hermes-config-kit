@@ -75,6 +75,19 @@ Observed root cause: a plugin linked into the profile (`node_modules/@scope/pkg 
 
 **同类：** 插件 import 的命名导出被新版 dsh 子包删掉（`The requested module '@deepseek-ai/<pkg>' does not provide an export named '<x>'`）——不是配置问题，是插件版本 < dsh 版本。查该插件 npm 新版是否已修（`npm view <pkg> peerDependencies` 看 range 是否覆盖当前 dsh 版本），有就升，没有就移除。例：dshmarket ≤1.36 import `installSettingsSection`（dsh-settings 0.1.2 已删），1.37+ 修好。
 
+**0.1.7 新症状（2026-09-29 验证）：** link: 插件即使 patch 里早有 `disabled: true`，升级后首次 boot 会以随机 hash id（如 `c2eccf5f`）被强制激活——若它注册 webserver 路由则报 `duplicate exact route`（entry id 是 hash 不是 patch 里的 id，这就是 disable 没拦住的证据）；之后 boot 变成 `failed to import` 警告（fiber undefined 但 entry.disabled 求值为 falsy，dump-config 却显示 disabled: true——dump 与运行时对 link: 条目不一致）。修法不变：三处（dependencies + bundles + patch）整个移除。
+
+**0.1.7 session format v4：发消息时报「本轮运行失败 format v4 message requires a producer-owned source kind」**——插件注入消息还在用 v3 旧 source 形状 `{kind:"plugin", plugin:"..."}`，v4 追加事件时拒收。运行期错误不进 journal，只在 UI。排查：grep 插件目录 `kind: "plugin"`。修法：升插件（例：@openviking/dsh-memory-plugin 0.3.x→0.5.8 已修，peer 覆盖 ^0.1.7-rc.2；0.x caret 不自动跨 minor，要手动改 package.json 版本再 `pnpm install --config.minimumReleaseAge=0`）。没新版就手改：source 改 `kind: "plugin:<name>"` 并同步改插件里所有 `kind === "plugin"` 判断点。
+
+### 7. 升 0.1.7-rc.2 后插件页出现「异常」+ 市场 React #130 崩（2026-09-29 验证）
+**查法：** UI 里 设置→插件→点异常条目的「查看」读「原因」。dsh 0.1.7 新增 plugin manager 兼容审计（`evaluatePluginCompatibility`，读插件 package.json 的 peerDependencies dsh range）——peer 不满足整包判 problem，组件不加载。
+
+- **`@linxin666/dsh-web-all@0.4.4` 是为未发布的 dsh 0.2.0-rc.1 提前发的（peer `>=0.2.0-rc.1`，0.2.0 还是 next 不是 latest）**。`^0.4.3` 会解析到 0.4.4 → 与 0.1.7-rc.2 不兼容 → 异常，市场 UI（其组件 `dsh-client-ui-market`）整包不加载。**修法：package.json 钉死 `"@linxin666/dsh-web-all": "0.4.3"`（去 caret）再 install。注意：市场里「全部更新」会把它升回 0.4.4 再炸——dsh 0.2.0 进 latest 前别接它。**
+- dshmarket 1.66.x 会在更新前弹同类兼容确认框（“X 声明需要 DSH >=0.2.0-rc.1，你运行 0.1.7-rc.2，已停止”）——这是拦截成功不是 bug，别点「仍可继续更新」。消除提示：市场「已安装」页将该包 **屏蔽/忽略**（「已屏蔽」页可找回）。
+- **dshmarket 1.45.1 客户端对 0.1.7 的 client runtime 崩 `Minified React error #130`**（组件 import 到 undefined，ui primitive 变了）。升级 → `pnpm add dshmarket@latest --config.minimumReleaseAge=0`（1.66.5，2026-09-28 发，晚于 dsh 0.1.7-rc.2，修好了）。
+- **验证市场 UI 不要靠猜**：市场界面在 设置→插件市场（`settings.section` slot 注入，不在插件页）。「添加插件」按钮弹的是官方包名安装对话框，不是市场——两件事。
+- peer 警告里 `@linxin666/* peer @deepseek-ai/dsh` / super-injector / find-plugin 的 "missing peer" 是 profile 布局的老问题（全局 dsh 运行时提供），无视。
+
 **pnpm `minimumReleaseAge` 拦截：** pnpm 11 该策略会拒装/拒验证最近发布的包，报错 `was published at ... within the minimumReleaseAge cutoff`，且 `pnpm config get` 各处都显示 undefined（来源不明，行为在）。一次性绕过：`pnpm install --config.minimumReleaseAge=0`（此 flag 是 dshmarket 自己的 `RELEASE_AGE_OVERRIDE` 用的同一个，安全）。
 
 **link: 插件的 peer symlink 会在 profile `pnpm install` 后失效**——peer symlink 若指向 profile 的 `node_modules/@deepseek-ai/<pkg>`，重装即被清。一律指向全局 dsh 安装目录 `~/.npm-global/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai/<pkg>`（随 dsh 本体存在，稳定）。
