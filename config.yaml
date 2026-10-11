@@ -514,6 +514,7 @@ skills:
   disabled:
     - notion
     - apple-reminders
+    - inspecting-hermes-desktop-dom
     - codex
 curator:
   enabled: true

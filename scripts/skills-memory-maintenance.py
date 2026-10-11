@@ -10,6 +10,7 @@
 
 import os
 import re
+import sys
 import json
 import shutil
 import subprocess
@@ -30,6 +31,17 @@ USER_CHAR_LIMIT = 1375
 SKILL_WARN_LIMIT = 50       # 建议上限
 SKILL_ARCHIVE_DAYS = 60     # 60 天未修改 → 归档候选
 MEMORY_WARN_SIZE = 6000     # 6KB 警告线
+
+# 活跃项目/在用工作流的技能：mtime 旧 ≠ 无用，永不进归档候选。项目完结后从这里移除。
+SKILL_KEEP = frozenset({
+    "bootkeeper", "tauri-v2-development", "windows-rust-native",  # BootKeeper 活跃开发
+    "ai-agent-consulting-delivery",   # 致达集团咨询项目
+    "chinese-academic-docx",          # 在读学生每学期刚需
+    "notion-bill",                    # 记账 cron 在用 + 待 curator adopt
+})
+
+# 当前平台（对齐 Hermes skill platforms 命名）
+_PLATFORM = {"darwin": "macos", "win32": "windows"}.get(sys.platform, "linux")
 
 now = datetime.now(timezone.utc)
 report = {
@@ -236,6 +248,19 @@ def _bundled_skill_names() -> set:
     }
 
 
+def _skill_platforms(skill_rel):
+    """SKILL.md frontmatter 的 platforms 集合；无该字段返回 None（全平台）"""
+    try:
+        head = (SKILLS_DIR / skill_rel / "SKILL.md").read_text(
+            encoding="utf-8", errors="ignore")[:2000]
+    except OSError:
+        return None
+    m = re.search(r"^platforms:\s*\[([^\]]*)\]", head, re.MULTILINE)
+    if not m:
+        return None
+    return {p.strip() for p in m.group(1).split(",") if p.strip()}
+
+
 def maintain_skills():
     skills_report = {}
     
@@ -258,7 +283,12 @@ def maintain_skills():
     for name, mtime in user_skills:
         age_days = (now - mtime).days
         if age_days >= SKILL_ARCHIVE_DAYS:
+            if Path(name).name in SKILL_KEEP:
+                continue
             if Path(name).name in bundled:
+                plats = _skill_platforms(name)
+                if plats and _PLATFORM not in plats:
+                    continue  # 本平台本就不加载（如 macos-only），不算超期
                 bundled_candidates.append((name, age_days, mtime))
             else:
                 archive_candidates.append((name, age_days, mtime))
